@@ -1,0 +1,40 @@
+export interface ParsedReply {
+  /** The reply with special blocks removed. This is what the chat shows. */
+  text: string;
+  /** Notes the agent asked to remember, from ```memory blocks. */
+  memoryNotes: string[];
+  /** Raw JSON from ```hire blocks. Checked by the caller. */
+  hireProposals: unknown[];
+  /** Blocks that could not be read, with the reason. */
+  problems: string[];
+}
+
+const BLOCK_PATTERN = /```(memory|hire)[^\S\n]*\n([\s\S]*?)```[^\S\n]*(?:\n|$)/g;
+
+/** Pulls ```memory and ```hire blocks out of an agent's reply. */
+export function parseReplyBlocks(reply: string): ParsedReply {
+  const memoryNotes: string[] = [];
+  const hireProposals: unknown[] = [];
+  const problems: string[] = [];
+
+  const text = reply.replace(BLOCK_PATTERN, (_match, kind: string, body: string) => {
+    const content = body.trim();
+    if (kind === 'memory') {
+      if (content) memoryNotes.push(content);
+    } else {
+      try {
+        hireProposals.push(JSON.parse(content));
+      } catch {
+        problems.push('A hire proposal was not valid JSON and was ignored.');
+      }
+    }
+    return '\n';
+  });
+
+  return {
+    text: text.replace(/\n{3,}/g, '\n\n').trim(),
+    memoryNotes,
+    hireProposals,
+    problems,
+  };
+}

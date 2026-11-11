@@ -1,0 +1,60 @@
+import type { FastifyInstance } from 'fastify';
+import { postNotice, setMessageMeta } from '../chat.js';
+import type { AppContext } from '../context.js';
+import { badRequest, conflict, notFound } from '../errors.js';
+import type { Message } from '../protocol.js';
+import type { TeamRunner } from '../routing/runner.js';
+import { getMessage } from '../store/messages.js';
+import { hire } from '../team.js';
+import { requireGroup } from './groups.js';
+
+export function requireMessage(ctx: AppContext, groupId: string, messageId: number): Message {
+  const message = getMessage(ctx.db, messageId);
+  if (!message || message.groupId !== groupId) throw notFound('Message not found');
+  return message;
+}
+
+export function registerRunRoutes(app: FastifyInstance, ctx: AppContext, runner: TeamRunner): void {
+  app.get<{ Params: { groupId: string } }>('/api/groups/:groupId/run', async (request) => {
+    const group = requireGroup(ctx, request.params.groupId);
+    return { running: runner.isRunning(group.id) };
+  });
+
+  app.post<{ Params: { groupId: string } }>('/api/groups/:groupId/stop', async (request) => {
+    const group = requireGroup(ctx, request.params.groupId);
+    const stopped = await runner.stop(group.id);
+    if (stopped) postNotice(ctx, group.id, 'You stopped the team.');
+    return { stopped };
+  });
+
+  // The lead proposes hires; only the human can approve or reject them.
+  app.post<{ Params: { groupId: string; messageId: number; decision: string } }>(
+    '/api/groups/:groupId/messages/:messageId/:decision',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          properties: {
+            groupId: { type: 'string' },
+            messageId: { type: 'integer' },
+            decision: { type: 'string', enum: ['approve-hire', 'reject-hire'] },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const group = requireGroup(ctx, request.params.groupId);
+      const message = requireMessage(ctx, group.id, request.params.messageId);
+      const meta = message.meta;
+      if (meta?.type !== 'hire-proposal') throw badRequest('That message is not a hire proposal');
+      if (meta.status !== 'pending') throw conflict(`This proposal was already ${meta.status}`);
+
+      if (request.params.decision === 'approve-hire') {
+        hire(ctx, group, meta.hire);
+        return setMessageMeta(ctx, message, { ...meta, status: 'approved' });
+      }
+      postNotice(ctx, group.id, `You declined hiring ${meta.hire.name}.`);
+      return setMessageMeta(ctx, message, { ...meta, status: 'rejected' });
+    },
+  );
+}

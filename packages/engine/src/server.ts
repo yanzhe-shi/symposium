@@ -13,6 +13,8 @@ import { registerAgentRoutes } from './routes/agents.js';
 import { registerGroupRoutes } from './routes/groups.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMessageRoutes } from './routes/messages.js';
+import { registerRunRoutes } from './routes/runs.js';
+import { TeamRunner, type RunnerHooks } from './routing/runner.js';
 import { registerChatSocket } from './ws/chat-socket.js';
 import { ChatHub } from './ws/chat-hub.js';
 
@@ -23,6 +25,12 @@ export interface ServerDeps {
   /** Tests pass a factory that returns mock adapters. */
   createAdapter?: AdapterFactory;
   logger?: FastifyServerOptions['logger'];
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    symposium: { ctx: AppContext; runner: TeamRunner };
+  }
 }
 
 const defaultAdapterFactory: AdapterFactory = (agent) =>
@@ -42,6 +50,15 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     createAdapter: deps.createAdapter ?? defaultAdapterFactory,
   };
 
+  const hooks: RunnerHooks = {
+    prepareWorkspace: async (group) => ({ cwd: group.folderPath! }),
+    afterTurn: async () => {},
+    afterRun: async () => {},
+  };
+  const runner = new TeamRunner(ctx, hooks);
+  app.decorate('symposium', { ctx, runner });
+  app.addHook('onClose', async () => runner.stopAll());
+
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode ?? 500;
     if (status >= 500) {
@@ -57,7 +74,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerHealthRoutes(app);
   registerGroupRoutes(app, ctx);
   registerAgentRoutes(app, ctx);
-  registerMessageRoutes(app, ctx);
+  registerMessageRoutes(app, ctx, runner);
+  registerRunRoutes(app, ctx, runner);
   registerChatSocket(app, ctx);
 
   return app;
