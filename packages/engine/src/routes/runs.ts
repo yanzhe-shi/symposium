@@ -6,6 +6,7 @@ import type { Message } from '../protocol.js';
 import type { TeamRunner } from '../routing/runner.js';
 import { getMessage } from '../store/messages.js';
 import { hire } from '../team.js';
+import { discardDiff, mergeDiff } from '../workflow.js';
 import { requireGroup } from './groups.js';
 
 export function requireMessage(ctx: AppContext, groupId: string, messageId: number): Message {
@@ -27,7 +28,8 @@ export function registerRunRoutes(app: FastifyInstance, ctx: AppContext, runner:
     return { stopped };
   });
 
-  // The lead proposes hires; only the human can approve or reject them.
+  // Decisions only the human can make: approving hires the lead proposed, merging or
+  // discarding a worker's changes.
   app.post<{ Params: { groupId: string; messageId: number; decision: string } }>(
     '/api/groups/:groupId/messages/:messageId/:decision',
     {
@@ -37,7 +39,10 @@ export function registerRunRoutes(app: FastifyInstance, ctx: AppContext, runner:
           properties: {
             groupId: { type: 'string' },
             messageId: { type: 'integer' },
-            decision: { type: 'string', enum: ['approve-hire', 'reject-hire'] },
+            decision: {
+              type: 'string',
+              enum: ['approve-hire', 'reject-hire', 'merge', 'discard'],
+            },
           },
         },
       },
@@ -45,6 +50,9 @@ export function registerRunRoutes(app: FastifyInstance, ctx: AppContext, runner:
     async (request) => {
       const group = requireGroup(ctx, request.params.groupId);
       const message = requireMessage(ctx, group.id, request.params.messageId);
+      if (request.params.decision === 'merge') return mergeDiff(ctx, group, message);
+      if (request.params.decision === 'discard') return discardDiff(ctx, group, message);
+
       const meta = message.meta;
       if (meta?.type !== 'hire-proposal') throw badRequest('That message is not a hire proposal');
       if (meta.status !== 'pending') throw conflict(`This proposal was already ${meta.status}`);

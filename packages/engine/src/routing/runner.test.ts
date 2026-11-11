@@ -51,13 +51,13 @@ async function chat(): Promise<Message[]> {
   return (await t.request({ url: `/api/groups/${group.id}/messages?limit=500` })).json();
 }
 
-/** The chat as "author: body" lines, without the hire announcements. */
+/** The chat as "author: body" lines, without the setup announcements. */
 async function transcript(): Promise<string[]> {
   const agents: Agent[] = (
     await t.request({ url: `/api/groups/${group.id}/agents?includeFired=true` })
   ).json();
   return (await chat())
-    .filter((m) => !m.body.includes('joined as'))
+    .filter((m) => !m.body.includes('joined as') && !m.body.startsWith('Project folder:'))
     .map((m) => {
       const who =
         m.authorKind === 'human'

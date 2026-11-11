@@ -14,7 +14,8 @@ import { registerGroupRoutes } from './routes/groups.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMessageRoutes } from './routes/messages.js';
 import { registerRunRoutes } from './routes/runs.js';
-import { TeamRunner, type RunnerHooks } from './routing/runner.js';
+import { TeamRunner } from './routing/runner.js';
+import { createRunnerHooks } from './workflow.js';
 import { registerChatSocket } from './ws/chat-socket.js';
 import { ChatHub } from './ws/chat-hub.js';
 
@@ -50,12 +51,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     createAdapter: deps.createAdapter ?? defaultAdapterFactory,
   };
 
-  const hooks: RunnerHooks = {
-    prepareWorkspace: async (group) => ({ cwd: group.folderPath! }),
-    afterTurn: async () => {},
-    afterRun: async () => {},
-  };
-  const runner = new TeamRunner(ctx, hooks);
+  const runner = new TeamRunner(ctx, createRunnerHooks(ctx));
   app.decorate('symposium', { ctx, runner });
   app.addHook('onClose', async () => runner.stopAll());
 

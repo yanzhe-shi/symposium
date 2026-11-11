@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.js';
 import { notFound } from '../errors.js';
+import { postNotice } from '../chat.js';
+import { prepareRepository } from '../git/repository.js';
 import { prepareProjectFolder } from '../project-folder.js';
 import type { CreateGroupRequest, Group, UpdateGroupRequest } from '../protocol.js';
 import { createGroup, getGroup, listGroups, updateGroup } from '../store/groups.js';
@@ -37,8 +39,16 @@ export function registerGroupRoutes(app: FastifyInstance, ctx: AppContext): void
       },
     },
     async (request, reply) => {
+      const name = request.body.name.trim();
       const folderPath = await prepareProjectFolder(request.body.folderPath, ctx.dataDir);
-      const group = createGroup(ctx.db, { name: request.body.name.trim(), folderPath });
+      const { baseBranch, actions } = await prepareRepository(folderPath, name);
+      const group = createGroup(ctx.db, { name, folderPath, baseBranch });
+      const done = actions.length > 0 ? ` Symposium ${actions.join(', ')}.` : '';
+      postNotice(
+        ctx,
+        group.id,
+        `Project folder: ${folderPath} (branch ${baseBranch}).${done} Workers get their own branch and worktree; nothing is merged without your approval.`,
+      );
       return reply.code(201).send(group);
     },
   );
