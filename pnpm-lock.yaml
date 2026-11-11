@@ -191,11 +191,16 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0(@types/node@22.20.5)(vite@8.3.7(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))
 
+  packages/adapters: {}
+
   packages/engine:
     dependencies:
       '@fastify/websocket':
         specifier: ^11.3.7
         version: 11.3.7
+      '@symposium/adapters':
+        specifier: workspace:*
+        version: link:../adapters
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
