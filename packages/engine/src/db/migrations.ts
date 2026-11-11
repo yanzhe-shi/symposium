@@ -58,6 +58,11 @@ export const migrations: readonly string[] = [
   );
   CREATE INDEX events_group_id ON events (group_id, id);
   `,
+
+  // 3: scribe (milestone 6). The newest message the scribe has already written into project.md.
+  `
+  ALTER TABLE groups ADD COLUMN scribe_cursor INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function getSchemaVersion(db: Database.Database): number {

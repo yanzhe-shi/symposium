@@ -97,20 +97,21 @@ export function buildSystemPrompt(input: PromptInput): string {
   return sections.join('\n\n');
 }
 
-function authorLabel(message: Message, everyone: Agent[]): string {
+export function authorLabel(message: Message, everyone: Agent[]): string {
   if (message.authorKind === 'human') return 'CEO';
   if (message.authorKind === 'system') return 'Symposium';
   const author = everyone.find((agent) => agent.id === message.authorAgentId);
   return author ? `${author.name} (${author.role})` : 'Former agent';
 }
 
-function formatMessage(message: Message, everyone: Agent[]): string {
+/** One message as it appears in a prompt. Pending diffs are shown in full unless `fullDiffs` is off. */
+export function formatMessage(message: Message, everyone: Agent[], fullDiffs = true): string {
   let body = message.body;
   if (message.meta?.type === 'diff') {
     const { stat, diff, truncated, status } = message.meta;
     body = `${message.body}\nStatus: ${status}\n${stat}`;
     // Pending diffs are shown in full so the lead and reviewers can judge them.
-    if (status === 'pending') {
+    if (fullDiffs && status === 'pending') {
       const shown = diff.length > MAX_DIFF_IN_PROMPT ? diff.slice(0, MAX_DIFF_IN_PROMPT) : diff;
       const cut = truncated || shown.length < diff.length ? '\n[diff truncated]' : '';
       body += `\n\`\`\`diff\n${shown}\n\`\`\`${cut}`;

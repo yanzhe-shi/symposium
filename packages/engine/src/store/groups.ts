@@ -69,3 +69,13 @@ export function updateGroup(
   );
   return getGroup(db, id);
 }
+
+export function getScribeCursor(db: Db, groupId: string): number {
+  const row = db.prepare('SELECT scribe_cursor FROM groups WHERE id = ?').get(groupId) as
+    { scribe_cursor: number } | undefined;
+  return row?.scribe_cursor ?? 0;
+}
+
+export function setScribeCursor(db: Db, groupId: string, messageId: number): void {
+  db.prepare('UPDATE groups SET scribe_cursor = ? WHERE id = ?').run(messageId, groupId);
+}

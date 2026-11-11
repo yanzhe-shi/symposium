@@ -26,7 +26,7 @@ export interface RunnerHooks {
   /** Called after each successful turn, e.g. to commit a worker's changes and post the diff. */
   afterTurn(group: Group, agent: Agent, workspace: Workspace, reply: Message): Promise<void>;
   /** Called when a run ends without being stopped, e.g. to let the scribe update project.md. */
-  afterRun(group: Group): Promise<void>;
+  afterRun(group: Group, signal: AbortSignal): Promise<void>;
 }
 
 interface Turn {
@@ -69,7 +69,8 @@ export class TeamRunner {
         postNotice(this.ctx, group.id, 'Stopped the current work to follow your new message.');
       }
       const turns = this.recipientsOfHuman(group, message);
-      if (turns.length > 0) this.start(group.id, turns);
+      // Mentioning only the scribe starts an empty run, whose end triggers a project.md update.
+      if (turns.length > 0 || this.mentionsScribe(group, message)) this.start(group.id, turns);
     });
   }
 
@@ -107,10 +108,16 @@ export class TeamRunner {
     }
   }
 
+  private mentionsScribe(group: Group, message: Message): boolean {
+    const scribe = listAgents(this.ctx.db, group.id).filter((agent) => agent.role === 'scribe');
+    return parseMentions(message.body, scribe).length > 0;
+  }
+
   private recipientsOfHuman(group: Group, message: Message): Turn[] {
     const team = listAgents(this.ctx.db, group.id).filter((agent) => agent.role !== 'scribe');
     const mentioned = parseMentions(message.body, team);
     if (mentioned.length > 0) return mentioned.map((agent) => ({ agent, trigger: message }));
+    if (this.mentionsScribe(group, message)) return [];
 
     const lead = team.find((agent) => agent.role === 'lead');
     if (lead) return [{ agent: lead, trigger: message }];
@@ -179,7 +186,7 @@ export class TeamRunner {
       round++;
     }
 
-    if (!signal.aborted) await this.hooks.afterRun(getGroup(this.ctx.db, groupId)!);
+    if (!signal.aborted) await this.hooks.afterRun(getGroup(this.ctx.db, groupId)!, signal);
   }
 
   /** One agent turn. Returns the agent's message, or undefined if the turn failed. */

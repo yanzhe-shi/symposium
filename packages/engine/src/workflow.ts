@@ -10,6 +10,7 @@ import {
 } from './git/workspaces.js';
 import type { Agent, Group, Message } from './protocol.js';
 import type { RunnerHooks, Workspace } from './routing/runner.js';
+import { updateProjectFile } from './scribe.js';
 import { getAgent } from './store/agents.js';
 import { logEvent } from './store/events.js';
 import { listMessagesSince } from './store/messages.js';
@@ -78,7 +79,9 @@ export function createRunnerHooks(ctx: AppContext): RunnerHooks {
       return { cwd: worktree.path, branch: worktree.branch };
     },
     afterTurn: (group, agent, workspace, reply) => recordWork(ctx, group, agent, workspace, reply),
-    afterRun: async () => {},
+    afterRun: async (group, signal) => {
+      await updateProjectFile(ctx, group, signal);
+    },
   };
 }
 
