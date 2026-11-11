@@ -5,7 +5,13 @@ export function cleanDraft(draft: string): string {
   return draft.replace(/^\s*\n/, '').trimEnd();
 }
 
-export function Composer({ onSend }: { onSend: (body: string) => Promise<void> }) {
+export function Composer({
+  onSend,
+  placeholder,
+}: {
+  onSend: (body: string) => Promise<void>;
+  placeholder: string;
+}) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
@@ -44,7 +50,7 @@ export function Composer({ onSend }: { onSend: (body: string) => Promise<void> }
       <div className="composer-row">
         <textarea
           aria-label="Message"
-          placeholder="Message the team (Enter to send, Shift+Enter for a new line)"
+          placeholder={placeholder}
           rows={2}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}

@@ -1,4 +1,15 @@
-import type { ErrorResponse, Group, Message, ServerEvent } from '@symposium/engine/protocol';
+import type {
+  Agent,
+  CreateGroupRequest,
+  ErrorResponse,
+  Group,
+  HireRequest,
+  Message,
+  ProviderInfo,
+  RoleInfo,
+  ServerEvent,
+  UpdateGroupRequest,
+} from '@symposium/engine/protocol';
 
 export const MAX_PAGE_SIZE = 500;
 
@@ -11,34 +22,60 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export function fetchGroups(): Promise<Group[]> {
-  return request<Group[]>('/api/groups');
-}
-
-export function fetchMessages(
-  groupId: string,
-  options: { afterId?: number; limit?: number } = {},
-): Promise<Message[]> {
-  const params = new URLSearchParams();
-  if (options.afterId !== undefined) params.set('afterId', String(options.afterId));
-  if (options.limit !== undefined) params.set('limit', String(options.limit));
-  const query = params.size > 0 ? `?${params}` : '';
-  return request<Message[]>(`/api/groups/${encodeURIComponent(groupId)}/messages${query}`);
-}
-
-export function postMessage(groupId: string, body: string): Promise<Message> {
-  return request<Message>(`/api/groups/${encodeURIComponent(groupId)}/messages`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ body }),
+function send<T>(method: string, url: string, body?: unknown): Promise<T> {
+  return request<T>(url, {
+    method,
+    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
 
+const groupUrl = (groupId: string) => `/api/groups/${encodeURIComponent(groupId)}`;
+
+export const api = {
+  groups: () => request<Group[]>('/api/groups'),
+  createGroup: (input: CreateGroupRequest) => send<Group>('POST', '/api/groups', input),
+  updateGroup: (groupId: string, changes: UpdateGroupRequest) =>
+    send<Group>('PATCH', groupUrl(groupId), changes),
+
+  providers: () => request<ProviderInfo[]>('/api/providers'),
+  roles: () => request<RoleInfo[]>('/api/roles'),
+
+  agents: (groupId: string) => request<Agent[]>(`${groupUrl(groupId)}/agents?includeFired=true`),
+  hire: (groupId: string, hire: HireRequest) =>
+    send<Agent>('POST', `${groupUrl(groupId)}/agents`, hire),
+  fire: (groupId: string, agentId: string) =>
+    send<Agent>('DELETE', `${groupUrl(groupId)}/agents/${agentId}`),
+
+  messages: (groupId: string, limit = MAX_PAGE_SIZE) =>
+    request<Message[]>(`${groupUrl(groupId)}/messages?limit=${limit}`),
+  post: (groupId: string, body: string) =>
+    send<Message>('POST', `${groupUrl(groupId)}/messages`, { body }),
+  decide: (
+    groupId: string,
+    messageId: number,
+    decision: 'approve-hire' | 'reject-hire' | 'merge' | 'discard',
+  ) => send<Message>('POST', `${groupUrl(groupId)}/messages/${messageId}/${decision}`),
+
+  runStatus: (groupId: string) => request<{ running: boolean }>(`${groupUrl(groupId)}/run`),
+  stop: (groupId: string) => send<{ stopped: boolean }>('POST', `${groupUrl(groupId)}/stop`),
+
+  project: (groupId: string) => request<{ content: string }>(`${groupUrl(groupId)}/project`),
+  saveProject: (groupId: string, content: string) =>
+    send<{ content: string }>('PUT', `${groupUrl(groupId)}/project`, { content }),
+  memory: (groupId: string, agentId: string) =>
+    request<{ content: string }>(`${groupUrl(groupId)}/agents/${agentId}/memory`),
+  saveMemory: (groupId: string, agentId: string, content: string) =>
+    send<{ content: string }>('PUT', `${groupUrl(groupId)}/agents/${agentId}/memory`, {
+      content,
+    }),
+};
+
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 
-export interface ChatConnectionHandlers {
+export interface GroupConnectionHandlers {
   onEvent: (event: ServerEvent) => void;
-  /** Called on every successful (re)connect, so the caller can catch up on missed messages. */
+  /** Called on every successful (re)connect, so the caller can catch up on missed changes. */
   onOpen: () => void;
   onStatusChange: (status: ConnectionStatus) => void;
 }
@@ -47,7 +84,7 @@ const MIN_RETRY_MS = 500;
 const MAX_RETRY_MS = 10_000;
 
 /** Opens the group's WebSocket and reconnects with exponential backoff. Returns a stop function. */
-export function connectChat(groupId: string, handlers: ChatConnectionHandlers): () => void {
+export function connectGroup(groupId: string, handlers: GroupConnectionHandlers): () => void {
   let socket: WebSocket | undefined;
   let retryMs = MIN_RETRY_MS;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;

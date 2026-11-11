@@ -56,6 +56,8 @@ export interface ProviderInfo {
   /** Whether agents on this provider can edit files in their worktree. */
   canEditFiles: boolean;
   modelSuggestions: string[];
+  /** A small, cheap model for the scribe. */
+  smallModel: string;
   description: string;
 }
 

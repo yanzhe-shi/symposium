@@ -11,6 +11,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     label: 'Claude Code (CLI)',
     canEditFiles: true,
     modelSuggestions: ['sonnet', 'opus', 'haiku'],
+    smallModel: 'haiku',
     description: 'Runs `claude -p` with your own Claude Code login.',
   },
   {
@@ -18,6 +19,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     label: 'Antigravity (CLI)',
     canEditFiles: true,
     modelSuggestions: ['gemini-3.8-flash-medium', 'gemini-3.8-flash-low', 'claude-sonnet-4-6'],
+    smallModel: 'gemini-3.8-flash-low',
     description:
       'Runs `agy -p` with your own Antigravity login. Run `agy models` for the full list.',
   },
@@ -26,6 +28,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     label: 'OpenAI-compatible API',
     canEditFiles: false,
     modelSuggestions: ['llama3.2', 'qwen2.5-coder', 'gpt-4.1-mini'],
+    smallModel: 'llama3.2',
     description:
       'Any chat completions API. Defaults to a local Ollama server. Text only: cannot edit files.',
   },
@@ -34,6 +37,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     label: 'Mock (no AI)',
     canEditFiles: false,
     modelSuggestions: ['mock'],
+    smallModel: 'mock',
     description: 'Echoes messages back. Free, for trying out Symposium.',
   },
 ];

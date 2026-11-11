@@ -31,6 +31,7 @@ export interface ProviderInfo {
   label: string;
   canEditFiles: boolean;
   modelSuggestions: string[];
+  smallModel: string;
   description: string;
 }
 

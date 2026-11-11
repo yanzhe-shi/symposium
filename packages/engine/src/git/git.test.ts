@@ -122,7 +122,7 @@ describe('worker isolation and merging', () => {
 
   it('runs workers in their own worktree and leaves the project folder untouched', async () => {
     const ada = await hire('Ada', 'worker', [
-      { text: 'Added the cart.', files: { 'src/cart.ts': 'export const cart = [];\n' } },
+      { text: '@Lea Added the cart.', files: { 'src/cart.ts': 'export const cart = [];\n' } },
     ]);
     await hire('Lea', 'lead', [{ text: 'Plan.' }]);
     await say('@Ada add a cart. @Lea plan.');
@@ -133,6 +133,7 @@ describe('worker isolation and merging', () => {
     expect(t.mocks.get('Lea')!.calls[0]!.workingDirectory).toBe(folder);
     expect(existsSync(join(folder, 'src/cart.ts'))).toBe(false);
     expect(sh(folder, 'log', '-1', '--format=%an', 'symposium/ada')).toBe('Ada (Symposium agent)');
+    expect(sh(folder, 'log', '-1', '--format=%s', 'symposium/ada')).toBe('Ada: Added the cart.');
 
     const [diff] = await diffMessages();
     expect(diff!.meta).toMatchObject({

@@ -115,11 +115,12 @@ export async function commitWork(
   await git(worktree.path, ['add', '-A']);
   const staged = await gitRaw(worktree.path, ['diff', '--cached', '--quiet']);
   if (staged.code === 0) return undefined;
+  // The subject is the reply's first line, without @mentions, which mean nothing in git history.
   const title =
     summary
       .split('\n')
-      .find((line) => line.trim())
-      ?.trim() ?? 'Update';
+      .map((line) => line.replace(/@[A-Za-z][A-Za-z0-9_-]*[,:]?\s*/g, '').trim())
+      .find(Boolean) ?? 'Update';
   const subject = `${agent.name}: ${title.length > 60 ? `${title.slice(0, 57)}...` : title}`;
   await git(worktree.path, [...agentIdentityArgs(agent.name), 'commit', '-q', '-m', subject]);
   return git(worktree.path, ['rev-parse', 'HEAD']);
