@@ -1,12 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/database.js';
-import {
-  createGroup,
-  DEFAULT_GROUP_NAME,
-  ensureDefaultGroup,
-  getGroup,
-  listGroups,
-} from './groups.js';
+import { createGroup, DEFAULT_MAX_ROUNDS, getGroup, listGroups, updateGroup } from './groups.js';
 import { insertMessage, listMessages, MAX_PAGE_SIZE } from './messages.js';
 
 let db: Db;
@@ -15,30 +9,32 @@ beforeEach(() => {
 });
 
 describe('groups store', () => {
-  it('creates the default group only once', () => {
-    const first = ensureDefaultGroup(db);
-    const second = ensureDefaultGroup(db);
-    expect(first.name).toBe(DEFAULT_GROUP_NAME);
-    expect(second.id).toBe(first.id);
-    expect(listGroups(db)).toHaveLength(1);
-  });
-
   it('gets a group by id and returns undefined for unknown ids', () => {
     const group = createGroup(db, { name: 'Alpha', folderPath: '/tmp/alpha' }, 1000);
     expect(getGroup(db, group.id)).toEqual({
       id: group.id,
       name: 'Alpha',
       folderPath: '/tmp/alpha',
+      baseBranch: null,
+      maxRounds: DEFAULT_MAX_ROUNDS,
       createdAt: 1000,
     });
     expect(getGroup(db, 'missing')).toBeUndefined();
+    expect(listGroups(db)).toHaveLength(1);
+  });
+
+  it('updates name, round limit and base branch', () => {
+    const group = createGroup(db, { name: 'Alpha' });
+    const updated = updateGroup(db, group.id, { maxRounds: 5, baseBranch: 'main' });
+    expect(updated).toMatchObject({ name: 'Alpha', maxRounds: 5, baseBranch: 'main' });
+    expect(updateGroup(db, 'missing', { name: 'x' })).toBeUndefined();
   });
 });
 
 describe('messages store', () => {
   let groupId: string;
   beforeEach(() => {
-    groupId = ensureDefaultGroup(db).id;
+    groupId = createGroup(db, { name: 'General' }).id;
   });
 
   function addMessages(count: number, inGroup = groupId): void {
@@ -55,6 +51,7 @@ describe('messages store', () => {
       authorKind: 'human',
       authorAgentId: null,
       body: 'hello',
+      meta: null,
       createdAt: 1234,
     });
   });

@@ -1,0 +1,56 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { AgentAccess } from '@symposium/adapters';
+import type { RoleInfo, RoleKind } from './protocol.js';
+
+export const ROLES: readonly RoleInfo[] = [
+  {
+    kind: 'lead',
+    title: 'Lead',
+    summary: 'Plans the work, assigns tasks and proposes hires. Reads code but does not edit it.',
+  },
+  {
+    kind: 'worker',
+    title: 'Worker',
+    summary: 'Builds what the lead assigns, on its own git branch and worktree.',
+  },
+  {
+    kind: 'reviewer',
+    title: 'Reviewer',
+    summary: 'Reviews diffs and asks for fixes. Reads code but does not edit it.',
+  },
+  {
+    kind: 'scribe',
+    title: 'Scribe',
+    summary: 'Keeps project.md up to date after each round of work. Use a small, cheap model.',
+  },
+];
+
+export function isRoleKind(value: string): value is RoleKind {
+  return ROLES.some((role) => role.kind === value);
+}
+
+/** One lead and one scribe per group. Any number of workers and reviewers. */
+export const SINGLE_SEAT_ROLES: readonly RoleKind[] = ['lead', 'scribe'];
+
+/** What each role may touch. Fixed by the engine, not by the model. */
+export function roleAccess(role: RoleKind): AgentAccess {
+  switch (role) {
+    case 'worker':
+      return 'edit';
+    case 'lead':
+    case 'reviewer':
+      return 'read';
+    case 'scribe':
+      return 'none';
+  }
+}
+
+/** The role's built-in job description from `roles/<kind>.md`. */
+export async function loadRoleText(rolesDir: string, role: RoleKind): Promise<string> {
+  try {
+    return (await readFile(join(rolesDir, `${role}.md`), 'utf8')).trim();
+  } catch {
+    return `# ${role}`;
+  }
+}

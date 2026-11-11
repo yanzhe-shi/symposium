@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import type { Db } from '../db/database.js';
-import { getGroup } from '../store/groups.js';
-import type { ChatHub } from './chat-hub.js';
+import type { AppContext } from '../context.js';
+import { requireGroup } from '../routes/groups.js';
 
 interface SocketQuery {
   groupId: string;
@@ -9,12 +8,9 @@ interface SocketQuery {
 
 /**
  * GET /ws?groupId=… upgrades to a WebSocket that receives the group's events.
- * The socket is push-only: clients send messages with POST /api/groups/:groupId/messages.
+ * The socket is push-only: clients act through the HTTP API.
  */
-export function registerChatSocket(
-  app: FastifyInstance,
-  { db, hub }: { db: Db; hub: ChatHub },
-): void {
+export function registerChatSocket(app: FastifyInstance, ctx: AppContext): void {
   app.get<{ Querystring: SocketQuery }>(
     '/ws',
     {
@@ -27,14 +23,12 @@ export function registerChatSocket(
         },
       },
       // Runs before the upgrade, so an unknown group gets a plain 404 instead of a socket.
-      preHandler: async (request, reply) => {
-        if (!getGroup(db, request.query.groupId)) {
-          await reply.code(404).send({ error: `Group ${request.query.groupId} not found` });
-        }
+      preHandler: async (request) => {
+        requireGroup(ctx, request.query.groupId);
       },
     },
     (socket, request) => {
-      hub.add(request.query.groupId, socket);
+      ctx.hub.add(request.query.groupId, socket);
     },
   );
 }

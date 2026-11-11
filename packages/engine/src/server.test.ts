@@ -1,24 +1,24 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { openDatabase, type Db } from './db/database.js';
+import type { Db } from './db/database.js';
 import type { Message, ServerEvent } from './protocol.js';
 import { MAX_MESSAGE_LENGTH } from './routes/messages.js';
-import { buildServer } from './server.js';
-import { createGroup, ensureDefaultGroup } from './store/groups.js';
+import { createGroup } from './store/groups.js';
+import { createTestApp, waitFor, type TestApp } from './testing.js';
 
+let testApp: TestApp;
 let db: Db;
 let app: FastifyInstance;
 let groupId: string;
 
 beforeEach(async () => {
-  db = openDatabase(':memory:');
-  groupId = ensureDefaultGroup(db).id;
-  app = await buildServer({ db });
+  testApp = await createTestApp();
+  ({ db, app } = testApp);
+  groupId = createGroup(db, { name: 'General' }).id;
 });
 
 afterEach(async () => {
-  await app.close();
-  db.close();
+  await testApp.close();
 });
 
 function postMessage(body: unknown, headers: Record<string, string> = {}, toGroup = groupId) {
@@ -150,14 +150,6 @@ describe('WebSocket', () => {
     });
     expect(res.status).toBe(201);
     return (await res.json()) as Message;
-  }
-
-  async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
-    const start = Date.now();
-    while (!check()) {
-      if (Date.now() - start > timeoutMs) throw new Error('Timed out waiting for condition');
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
   }
 
   it('pushes new messages to every client in the group', async () => {

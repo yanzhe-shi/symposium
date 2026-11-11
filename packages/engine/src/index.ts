@@ -1,14 +1,17 @@
 import { loadConfig } from './config.js';
 import { openDatabase } from './db/database.js';
 import { buildServer } from './server.js';
-import { ensureDefaultGroup } from './store/groups.js';
 
 const config = loadConfig();
 const db = openDatabase(config.dbPath);
-ensureDefaultGroup(db);
 
-const app = await buildServer({ db, logger: true });
-app.log.info(`Using database at ${config.dbPath}`);
+const app = await buildServer({
+  db,
+  dataDir: config.dataDir,
+  rolesDir: config.rolesDir,
+  logger: true,
+});
+app.log.info(`Using data folder ${config.dataDir} and database ${config.dbPath}`);
 
 async function shutdown(signal: string): Promise<void> {
   app.log.info(`Received ${signal}, shutting down`);

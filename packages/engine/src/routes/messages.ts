@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import type { Db } from '../db/database.js';
+import { postMessage } from '../chat.js';
+import type { AppContext } from '../context.js';
+import { badRequest } from '../errors.js';
 import type { CreateMessageRequest } from '../protocol.js';
-import { getGroup } from '../store/groups.js';
-import { insertMessage, listMessages, MAX_PAGE_SIZE } from '../store/messages.js';
-import type { ChatHub } from '../ws/chat-hub.js';
+import { listMessages, MAX_PAGE_SIZE } from '../store/messages.js';
+import { requireGroup } from './groups.js';
 
 export const MAX_MESSAGE_LENGTH = 20_000;
 
@@ -16,10 +17,7 @@ interface ListQuery {
   limit?: number;
 }
 
-export function registerMessageRoutes(
-  app: FastifyInstance,
-  { db, hub }: { db: Db; hub: ChatHub },
-): void {
+export function registerMessageRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get<{ Params: GroupParams; Querystring: ListQuery }>(
     '/api/groups/:groupId/messages',
     {
@@ -34,12 +32,9 @@ export function registerMessageRoutes(
         },
       },
     },
-    async (request, reply) => {
-      const { groupId } = request.params;
-      if (!getGroup(db, groupId)) {
-        return reply.code(404).send({ error: `Group ${groupId} not found` });
-      }
-      return listMessages(db, groupId, request.query);
+    async (request) => {
+      const group = requireGroup(ctx, request.params.groupId);
+      return listMessages(ctx.db, group.id, request.query);
     },
   );
 
@@ -58,17 +53,11 @@ export function registerMessageRoutes(
       },
     },
     async (request, reply) => {
-      const { groupId } = request.params;
-      if (!getGroup(db, groupId)) {
-        return reply.code(404).send({ error: `Group ${groupId} not found` });
-      }
+      const group = requireGroup(ctx, request.params.groupId);
       const { body } = request.body;
-      if (body.trim() === '') {
-        return reply.code(400).send({ error: 'Message body must not be blank' });
-      }
-      // In milestone 1 every message posted over HTTP comes from the human.
-      const message = insertMessage(db, { groupId, authorKind: 'human', body });
-      hub.broadcast(groupId, { type: 'message.created', message });
+      if (body.trim() === '') throw badRequest('Message body must not be blank');
+      // Every message posted over HTTP comes from the human.
+      const message = postMessage(ctx, { groupId: group.id, authorKind: 'human', body });
       return reply.code(201).send(message);
     },
   );

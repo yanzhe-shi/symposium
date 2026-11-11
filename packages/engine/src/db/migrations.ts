@@ -37,6 +37,27 @@ export const migrations: readonly string[] = [
 
   CREATE INDEX messages_group_id ON messages (group_id, id);
   `,
+
+  // 2: groups and agents (milestone 3)
+  `
+  ALTER TABLE groups ADD COLUMN max_rounds INTEGER NOT NULL DEFAULT 3;
+  ALTER TABLE groups ADD COLUMN base_branch TEXT;
+  ALTER TABLE agents ADD COLUMN instructions TEXT NOT NULL DEFAULT '';
+  ALTER TABLE agents ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE agents ADD COLUMN fired_at INTEGER;
+  ALTER TABLE messages ADD COLUMN meta TEXT;
+
+  -- Audit log: hires, fires, agent turns, git operations. Messages are logged in messages.
+  CREATE TABLE events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id   TEXT NOT NULL REFERENCES groups(id),
+    agent_id   TEXT REFERENCES agents(id),
+    kind       TEXT NOT NULL,
+    detail     TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX events_group_id ON events (group_id, id);
+  `,
 ];
 
 export function getSchemaVersion(db: Database.Database): number {
