@@ -22,12 +22,14 @@ Send this without mentioning anyone, so it goes to the lead:
 
 1. Lea replies with a plan and asks you to approve it.
 2. You reply "Approved". Lea assigns tasks with @mentions.
-3. Ada and Gio each work in their own worktree. Their changes appear as diffs.
+3. Ada and Gio work at the same time, each in their own worktree. Their changes appear as diffs. You can keep messaging anyone while they work.
 4. Rex reviews the diffs and either approves or asks for fixes.
 5. Lea tells you when work is ready. You click **Merge into main**.
-6. After each round, Sam updates `project.md` with the decisions and status.
+6. Once the team has been idle for 30 seconds, Sam updates `project.md` with the decisions and status.
 
-If the team stops with "Round limit reached", read where things stand and reply to carry on.
+If a thread stops with "Round limit reached", read where things stand and reply to carry on.
+
+To skip step 2, untick **Lead asks before starting work** in the header: Lea then assigns tasks in her first reply.
 
 ## Starting smaller
 

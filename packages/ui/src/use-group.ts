@@ -37,7 +37,7 @@ export function useGroup(groupId: string, onGroupChanged: (group: Group) => void
         if (!active) return;
         dispatch({ type: 'agentsLoaded', agents });
         dispatch({ type: 'messagesReceived', messages });
-        dispatch({ type: 'running', running: run.running });
+        dispatch({ type: 'statusLoaded', status: run });
         setLoadError(undefined);
       } catch (error) {
         if (active) setLoadError(error instanceof Error ? error.message : String(error));
@@ -64,6 +64,16 @@ export function useGroup(groupId: string, onGroupChanged: (group: Group) => void
             break;
           case 'agent.activity':
             dispatch({ type: 'activity', agentId: event.agentId, activity: event.activity });
+            break;
+          case 'agent.queue':
+            dispatch({
+              type: 'queue',
+              agentId: event.agentId,
+              queuedMessageIds: event.queuedMessageIds,
+            });
+            break;
+          case 'message.delivered':
+            dispatch({ type: 'delivered', agentId: event.agentId, messageId: event.messageId });
             break;
           case 'run.status':
             dispatch({ type: 'running', running: event.running });

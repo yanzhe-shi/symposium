@@ -1,8 +1,8 @@
-import type { Group } from '@symposium/engine/protocol';
+import type { Group, UpdateGroupRequest } from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { api } from '../api.ts';
 import type { Catalog } from '../App.tsx';
-import { activeAgents, workingAgents } from '../group-state.ts';
+import { activeAgents, queuedFor, workingAgents } from '../group-state.ts';
 import { useGroup } from '../use-group.ts';
 import { Composer } from './Composer.tsx';
 import { MessageList } from './MessageList.tsx';
@@ -11,6 +11,7 @@ import { TeamPanel } from './TeamPanel.tsx';
 
 const STATUS_LABELS = { connecting: 'Connecting…', open: 'Live', closed: 'Reconnecting…' };
 const ROUND_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10];
+const PARALLEL_CHOICES = [1, 2, 3, 4, 5, 6, 8];
 
 interface GroupViewProps {
   group: Group;
@@ -25,17 +26,20 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
   const team = activeAgents(state);
   const working = workingAgents(state);
 
-  async function setRounds(maxRounds: number): Promise<void> {
+  const queued = team.reduce((sum, agent) => sum + (state.queues[agent.id]?.length ?? 0), 0);
+  const busy = state.running || working.length > 0;
+
+  async function changeGroup(changes: UpdateGroupRequest): Promise<void> {
     try {
-      onGroupChanged(await api.updateGroup(group.id, { maxRounds }));
+      onGroupChanged(await api.updateGroup(group.id, changes));
     } catch (err) {
       setActionError(String(err));
     }
   }
 
-  async function stop(): Promise<void> {
+  async function stopAll(): Promise<void> {
     try {
-      await api.stop(group.id);
+      await api.stopAll(group.id);
     } catch (err) {
       setActionError(String(err));
     }
@@ -44,7 +48,7 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
   const hint =
     team.length === 0
       ? 'Hire a team first (Team panel on the right)'
-      : `Message the team. @${team[0]!.name} to talk to someone directly. Enter to send.`;
+      : `Message the team at any time; nobody stops. @${team[0]!.name} talks to someone directly, /stop stops work, /now @name interrupts.`;
 
   return (
     <div className="group-view">
@@ -61,12 +65,12 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
         <div className="group-header-controls">
           <label
             className="small"
-            title="How many times work may pass between agents before the team waits for you"
+            title="How many times work may pass between agents in one thread before it waits for you"
           >
             Round limit{' '}
             <select
               value={group.maxRounds}
-              onChange={(event) => void setRounds(Number(event.target.value))}
+              onChange={(event) => void changeGroup({ maxRounds: Number(event.target.value) })}
             >
               {ROUND_CHOICES.map((n) => (
                 <option key={n} value={n}>
@@ -74,6 +78,30 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
                 </option>
               ))}
             </select>
+          </label>
+          <label className="small" title="How many agents may work at the same time">
+            At once{' '}
+            <select
+              value={group.maxParallel}
+              onChange={(event) => void changeGroup({ maxParallel: Number(event.target.value) })}
+            >
+              {PARALLEL_CHOICES.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label
+            className="small"
+            title="On: the lead proposes a plan and waits for your approval. Off: the lead starts assigning tasks right away."
+          >
+            <input
+              type="checkbox"
+              checked={group.leadAsksFirst}
+              onChange={(event) => void changeGroup({ leadAsksFirst: event.target.checked })}
+            />{' '}
+            Lead asks before starting work
           </label>
           <span className={`status status-${status}`}>{STATUS_LABELS[status]}</span>
         </div>
@@ -94,24 +122,30 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
               </button>
             </p>
           )}
-          <MessageList groupId={group.id} messages={state.messages} agents={state.agents} />
-          {(state.running || working.length > 0) && (
+          <MessageList
+            groupId={group.id}
+            messages={state.messages}
+            agents={state.agents}
+            queuedFor={queuedFor(state)}
+          />
+          {busy && (
             <div className="working-bar">
               <span className="working-dot" aria-hidden />
               <span>
                 {working.length > 0
                   ? `${working.map((agent) => agent.name).join(', ')} ${working.length === 1 ? 'is' : 'are'} working…`
                   : 'The team is working…'}
+                {queued > 0 && ` ${queued} message${queued === 1 ? '' : 's'} queued.`}
+                {' You can keep typing.'}
               </span>
-              {state.running && (
-                <button
-                  type="button"
-                  className="button-secondary button-small"
-                  onClick={() => void stop()}
-                >
-                  Stop
-                </button>
-              )}
+              <button
+                type="button"
+                className="button-secondary button-small"
+                title="Cancel every turn and empty every inbox"
+                onClick={() => void stopAll()}
+              >
+                Stop all
+              </button>
             </div>
           )}
           <Composer onSend={send} placeholder={hint} />
@@ -139,7 +173,13 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
             </button>
           </div>
           {panel === 'team' ? (
-            <TeamPanel group={group} team={team} activity={state.activity} catalog={catalog} />
+            <TeamPanel
+              group={group}
+              team={team}
+              activity={state.activity}
+              queues={state.queues}
+              catalog={catalog}
+            />
           ) : (
             <ProjectPanel group={group} version={state.projectVersion} />
           )}

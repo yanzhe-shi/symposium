@@ -4,7 +4,7 @@ import { MockAdapter, type MockReply } from '@symposium/adapters';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Agent, Group, Message } from './protocol.js';
 import { unwrapMarkdown } from './scribe.js';
-import { createTestApp, type TestApp } from './testing.js';
+import { createTestApp, waitFor, type TestApp } from './testing.js';
 
 let t: TestApp;
 let group: Group;
@@ -97,6 +97,18 @@ describe('scribe', () => {
     expect(t.mocks.get('Lea')!.calls[0]!.prompt).toContain('# Shop');
   });
 
+  it('waits until the whole team is idle before it runs', async () => {
+    await hire('Ada', 'worker', [{ text: 'Cart done.', delayMs: 150 }]);
+    await hire('Bob', 'worker', [{ text: 'Checkout done.', delayMs: 300 }]);
+    await hire('Sam', 'scribe', [{ text: '# Shop\n\nCart and checkout are done.' }]);
+    await say('@Ada build the cart. @Bob build the checkout.');
+
+    const sam = t.mocks.get('Sam')!;
+    expect(sam.calls).toHaveLength(1);
+    expect(sam.calls[0]!.prompt).toContain('Cart done.');
+    expect(sam.calls[0]!.prompt).toContain('Checkout done.');
+  });
+
   it('strips a fence around the whole reply only', () => {
     expect(unwrapMarkdown('```md\n# A\n```')).toBe('# A');
     expect(unwrapMarkdown('# A\n\n```ts\nx\n```')).toBe('# A\n\n```ts\nx\n```');
@@ -127,5 +139,49 @@ describe('document routes', () => {
     expect(
       (await t.request({ url: `/api/groups/${group.id}/agents/nope/memory` })).statusCode,
     ).toBe(404);
+  });
+});
+
+describe('scribe timing', () => {
+  it('runs once after the chat has been quiet for a while', async () => {
+    const quiet = await createTestApp({ scribeDelayMs: 150 });
+    try {
+      const shop: Group = (
+        await quiet.request({
+          method: 'POST',
+          url: '/api/groups',
+          payload: { name: 'Shop', folderPath: join(quiet.workDir, 'shop') },
+        })
+      ).json();
+      const post = (url: string, payload: object) =>
+        quiet.request({ method: 'POST', url, payload });
+      const sam = new MockAdapter([{ text: '# Shop\n\nTwo things happened.' }]);
+      quiet.mocks.set('Sam', sam);
+      for (const [name, role] of [
+        ['Lea', 'lead'],
+        ['Sam', 'scribe'],
+      ]) {
+        await post(`/api/groups/${shop.id}/agents`, {
+          name,
+          role,
+          provider: 'mock',
+          model: 'mock',
+        });
+      }
+
+      // The second message arrives during the quiet period, which starts over.
+      await post(`/api/groups/${shop.id}/messages`, { body: 'First thing' });
+      await waitFor(() => quiet.mocks.get('Lea')?.calls.length === 1);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(sam.calls).toHaveLength(0);
+      await post(`/api/groups/${shop.id}/messages`, { body: 'Second thing' });
+      await quiet.app.symposium.runner.waitForIdle(shop.id);
+
+      expect(sam.calls).toHaveLength(1);
+      expect(sam.calls[0]!.prompt).toContain('First thing');
+      expect(sam.calls[0]!.prompt).toContain('Second thing');
+    } finally {
+      await quiet.close();
+    }
   });
 });

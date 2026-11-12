@@ -23,7 +23,7 @@ export interface TestApp {
 }
 
 export async function createTestApp(
-  options: { createAdapter?: AdapterFactory } = {},
+  options: { createAdapter?: AdapterFactory; scribeDelayMs?: number } = {},
 ): Promise<TestApp> {
   const root = mkdtempSync(join(tmpdir(), 'symposium-test-'));
   const dataDir = join(root, 'data');
@@ -42,6 +42,8 @@ export async function createTestApp(
     db,
     dataDir,
     createAdapter: options.createAdapter ?? mockFactory,
+    // Tests don't wait for the group to stay quiet before the scribe runs, unless they ask to.
+    scribeDelayMs: options.scribeDelayMs ?? 0,
   });
   return {
     app,

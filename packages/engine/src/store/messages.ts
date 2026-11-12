@@ -11,6 +11,8 @@ interface MessageRow {
   author_agent_id: string | null;
   body: string;
   meta: string | null;
+  thread_id: number | null;
+  round: number | null;
   created_at: number;
 }
 
@@ -22,6 +24,8 @@ function toMessage(row: MessageRow): Message {
     authorAgentId: row.author_agent_id,
     body: row.body,
     meta: row.meta === null ? null : (JSON.parse(row.meta) as MessageMeta),
+    threadId: row.thread_id,
+    round: row.round,
     createdAt: row.created_at,
   };
 }
@@ -32,13 +36,18 @@ export interface NewMessage {
   authorAgentId?: string | null;
   body: string;
   meta?: MessageMeta | null;
+  /** The thread this message belongs to. Human messages start their own thread. */
+  threadId?: number | null;
+  /** How many hand-offs deep in the thread an agent's reply is. */
+  round?: number | null;
 }
 
 export function insertMessage(db: Db, input: NewMessage, now: number = Date.now()): Message {
   const row = db
     .prepare(
-      `INSERT INTO messages (group_id, author_kind, author_agent_id, body, meta, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO messages
+         (group_id, author_kind, author_agent_id, body, meta, thread_id, round, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING *`,
     )
     .get(
@@ -47,8 +56,15 @@ export function insertMessage(db: Db, input: NewMessage, now: number = Date.now(
       input.authorAgentId ?? null,
       input.body,
       input.meta ? JSON.stringify(input.meta) : null,
+      input.threadId ?? null,
+      input.round ?? null,
       now,
     ) as MessageRow;
+  // Every human message starts a thread, named after the message itself.
+  if (row.author_kind === 'human' && row.thread_id === null) {
+    db.prepare('UPDATE messages SET thread_id = id WHERE id = ?').run(row.id);
+    row.thread_id = row.id;
+  }
   return toMessage(row);
 }
 

@@ -44,7 +44,13 @@ describe('groups', () => {
   it('creates a group and its project folder', async () => {
     const folder = join(t.workDir, 'new', 'project');
     const group = await makeGroup('Shop', folder);
-    expect(group).toMatchObject({ name: 'Shop', folderPath: folder, maxRounds: 3 });
+    expect(group).toMatchObject({
+      name: 'Shop',
+      folderPath: folder,
+      maxRounds: 6,
+      maxParallel: 3,
+      leadAsksFirst: true,
+    });
     expect(existsSync(folder)).toBe(true);
     const list = (await t.request({ url: '/api/groups' })).json();
     expect(list).toHaveLength(1);
@@ -86,6 +92,22 @@ describe('groups', () => {
       payload: { maxRounds: 99 },
     });
     expect(tooMany.statusCode).toBe(400);
+  });
+
+  it('updates the cap on agents working at once and the lead-asks-first setting', async () => {
+    const group = await makeGroup();
+    const ok = await t.request({
+      method: 'PATCH',
+      url: `/api/groups/${group.id}`,
+      payload: { maxParallel: 5, leadAsksFirst: false },
+    });
+    expect(ok.json()).toMatchObject({ maxParallel: 5, leadAsksFirst: false, maxRounds: 6 });
+    const none = await t.request({
+      method: 'PATCH',
+      url: `/api/groups/${group.id}`,
+      payload: { maxParallel: 0 },
+    });
+    expect(none.statusCode).toBe(400);
   });
 });
 

@@ -63,8 +63,9 @@ export function registerMessageRoutes(
       if (body.trim() === '') throw badRequest('Message body must not be blank');
       // Every message posted over HTTP comes from the human.
       const message = postMessage(ctx, { groupId: group.id, authorKind: 'human', body });
-      // The team works in the background; progress arrives over the WebSocket.
-      void runner.onHumanMessage(group, message);
+      // The message goes to its recipients' inboxes without stopping anyone. The team works in
+      // the background; progress arrives over the WebSocket.
+      runner.onHumanMessage(group, message);
       return reply.code(201).send(message);
     },
   );

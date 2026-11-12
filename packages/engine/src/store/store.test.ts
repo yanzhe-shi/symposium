@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/database.js';
 import { createGroup, DEFAULT_MAX_ROUNDS, getGroup, listGroups, updateGroup } from './groups.js';
-import { insertMessage, listMessages, MAX_PAGE_SIZE } from './messages.js';
+import { getMessage, insertMessage, listMessages, MAX_PAGE_SIZE } from './messages.js';
 
 let db: Db;
 beforeEach(() => {
@@ -17,16 +17,25 @@ describe('groups store', () => {
       folderPath: '/tmp/alpha',
       baseBranch: null,
       maxRounds: DEFAULT_MAX_ROUNDS,
+      maxParallel: 3,
+      leadAsksFirst: true,
       createdAt: 1000,
     });
     expect(getGroup(db, 'missing')).toBeUndefined();
     expect(listGroups(db)).toHaveLength(1);
   });
 
-  it('updates name, round limit and base branch', () => {
+  it('updates name, limits, settings and base branch', () => {
     const group = createGroup(db, { name: 'Alpha' });
     const updated = updateGroup(db, group.id, { maxRounds: 5, baseBranch: 'main' });
     expect(updated).toMatchObject({ name: 'Alpha', maxRounds: 5, baseBranch: 'main' });
+    expect(updateGroup(db, group.id, { maxParallel: 2, leadAsksFirst: false })).toMatchObject({
+      maxRounds: 5,
+      maxParallel: 2,
+      leadAsksFirst: false,
+    });
+    // Leaving a setting out keeps it, including a false one.
+    expect(updateGroup(db, group.id, { name: 'Beta' })).toMatchObject({ leadAsksFirst: false });
     expect(updateGroup(db, 'missing', { name: 'x' })).toBeUndefined();
   });
 });
@@ -52,8 +61,26 @@ describe('messages store', () => {
       authorAgentId: null,
       body: 'hello',
       meta: null,
+      // A human message starts its own thread.
+      threadId: message.id,
+      round: null,
       createdAt: 1234,
     });
+  });
+
+  it('stores the thread and round of a reply, and leaves other system messages out of threads', () => {
+    const question = insertMessage(db, { groupId, authorKind: 'human', body: 'hello' });
+    const notice = insertMessage(db, { groupId, authorKind: 'system', body: 'Ada joined' });
+    const inThread = insertMessage(db, {
+      groupId,
+      authorKind: 'system',
+      body: 'Round limit reached',
+      threadId: question.id,
+      round: 2,
+    });
+    expect([notice.threadId, notice.round]).toEqual([null, null]);
+    expect([inThread.threadId, inThread.round]).toEqual([question.id, 2]);
+    expect(getMessage(db, inThread.id)).toEqual(inThread);
   });
 
   it('lists messages oldest first, limited to the most recent page', () => {

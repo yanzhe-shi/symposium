@@ -11,10 +11,12 @@ Each group chat is one project folder. You add agents from any provider (Claude 
 - **A chat per project.** Create a group linked to a folder. Symposium makes it a git repo if it isn't one.
 - **Hire a team.** A lead plans the work and assigns it, workers build it, a reviewer checks it, and a scribe keeps `project.md` current.
 - **@mentions route the work.** Your message goes to the agents you mention, or to the lead. Agents hand work to each other the same way.
-- **Round limits.** After 3 hand-offs between agents (you can change this), the team stops and waits for you.
+- **Agents work in parallel.** Every agent has an inbox and works through it one turn at a time, while its teammates do the same. You set how many may work at once (3 by default).
+- **Talk at any time.** A new message never stops anyone. A busy agent gets it in its next turn; the chat shows it as "queued for Ada" until then.
+- **Round limits.** Each message you send starts a thread. After 6 hand-offs between agents in a thread (you can change this), that thread waits for you. Other threads carry on.
 - **Git isolation.** Every worker edits in its own branch and worktree. Its changes show up in the chat as a diff. Nothing reaches your project until you click **Merge**.
 - **Memory that stays with the agent.** Each agent keeps its own memory file, and every agent reads `project.md` before working. Both belong to Symposium, not to the provider.
-- **You stay in charge.** Stop the team at any time, or interrupt it with a new message. Approve or decline the hires the lead proposes.
+- **You stay in charge.** Work stops only when you say so: **Stop all**, **Stop** on one agent, `/stop`, or `/now @Ada …` to interrupt Ada with something urgent. Approve or decline the hires the lead proposes.
 
 ## Quick start
 
@@ -44,7 +46,7 @@ The code owns the rules, the lead owns the decisions, and you own the approvals.
 | Lead agent    | How to split the work, who does each task, when work is good enough             |
 | You           | Hires, plans, merges, stopping the team                                         |
 
-**Routing.** A message from you goes to the agents it @mentions, or to the lead if it mentions nobody. An agent's reply goes to the agents it @mentions. Agents take turns one at a time. Each agent-to-agent hand-off is one round, and the round limit stops runaway conversations.
+**Routing.** A message from you goes to the agents it @mentions, or to the lead if it mentions nobody. An agent's reply goes to the agents it @mentions. Each agent works through its own inbox one turn at a time, and different agents work in parallel, up to the group's cap. Messages that arrive while an agent is busy reach it together in its next turn. Each agent-to-agent hand-off is one round in the thread your message started, and the round limit stops runaway conversations.
 
 **Context.** The lead sees the whole recent chat. Other agents see `project.md`, their own memory, and only the messages that mention them, plus diffs waiting for review. This keeps cost down as the team grows.
 

@@ -9,10 +9,19 @@ interface TeamPanelProps {
   group: Group;
   team: Agent[];
   activity: Record<string, AgentActivity>;
+  /** Per agent, the ids of messages waiting in its inbox. */
+  queues: Record<string, number[]>;
   catalog: Catalog;
 }
 
-export function TeamPanel({ group, team, activity, catalog }: TeamPanelProps) {
+/** "Working", "Idle", "Working · 2 queued" or "1 queued" (waiting for a free slot). */
+export function agentStatusLabel(working: boolean, queued: number): string {
+  const waiting = queued > 0 ? `${queued} queued` : '';
+  if (working) return waiting ? `Working · ${waiting}` : 'Working';
+  return waiting || 'Idle';
+}
+
+export function TeamPanel({ group, team, activity, queues, catalog }: TeamPanelProps) {
   const [hiring, setHiring] = useState(false);
   const [memoryOf, setMemoryOf] = useState<Agent>();
   const [error, setError] = useState<string>();
@@ -21,6 +30,14 @@ export function TeamPanel({ group, team, activity, catalog }: TeamPanelProps) {
     if (!confirm(`Fire ${agent.name}? Their branch, worktree and memory are kept.`)) return;
     try {
       await api.fire(group.id, agent.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function stop(agent: Agent): Promise<void> {
+    try {
+      await api.stopAgent(group.id, agent.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -40,32 +57,51 @@ export function TeamPanel({ group, team, activity, catalog }: TeamPanelProps) {
         </p>
       )}
       <ul className="agent-list">
-        {team.map((agent) => (
-          <li key={agent.id} className="agent-card">
-            <div className="agent-card-top">
-              <span
-                className={`activity-dot${activity[agent.id] === 'working' ? ' activity-working' : ''}`}
-                title={activity[agent.id] === 'working' ? 'Working' : 'Idle'}
-              />
-              <strong>{agent.name}</strong>
-              <span className={`role-badge role-${agent.role}`}>{agent.role}</span>
-            </div>
-            <div className="muted small">
-              {agent.provider} · {agent.model}
-            </div>
-            {agent.instructions && (
-              <div className="small agent-instructions">{agent.instructions}</div>
-            )}
-            <div className="agent-actions">
-              <button type="button" className="link-button" onClick={() => setMemoryOf(agent)}>
-                Memory
-              </button>
-              <button type="button" className="link-button danger" onClick={() => void fire(agent)}>
-                Fire
-              </button>
-            </div>
-          </li>
-        ))}
+        {team.map((agent) => {
+          const working = activity[agent.id] === 'working';
+          const queued = queues[agent.id]?.length ?? 0;
+          const busy = working || queued > 0;
+          return (
+            <li key={agent.id} className="agent-card">
+              <div className="agent-card-top">
+                <span className={`activity-dot${working ? ' activity-working' : ''}`} aria-hidden />
+                <strong>{agent.name}</strong>
+                <span className={`role-badge role-${agent.role}`}>{agent.role}</span>
+                <span className={`agent-status${busy ? ' agent-status-busy' : ''}`}>
+                  {agentStatusLabel(working, queued)}
+                </span>
+              </div>
+              <div className="muted small">
+                {agent.provider} · {agent.model}
+              </div>
+              {agent.instructions && (
+                <div className="small agent-instructions">{agent.instructions}</div>
+              )}
+              <div className="agent-actions">
+                {busy && (
+                  <button
+                    type="button"
+                    className="link-button"
+                    title={`Cancel ${agent.name}'s turn and empty their inbox. Everyone else carries on.`}
+                    onClick={() => void stop(agent)}
+                  >
+                    Stop
+                  </button>
+                )}
+                <button type="button" className="link-button" onClick={() => setMemoryOf(agent)}>
+                  Memory
+                </button>
+                <button
+                  type="button"
+                  className="link-button danger"
+                  onClick={() => void fire(agent)}
+                >
+                  Fire
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
       {error && <p className="form-error">{error}</p>}
       <button type="button" onClick={() => setHiring(true)}>

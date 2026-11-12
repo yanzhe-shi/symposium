@@ -146,6 +146,37 @@ describe('worker isolation and merging', () => {
     expect(diff!.meta?.type === 'diff' && diff!.meta.diff).toContain('+export const cart = [];');
   });
 
+  it('lets several workers edit at the same time, each on its own branch', async () => {
+    const names = ['Ada', 'Bob', 'Cy'];
+    for (const name of names) {
+      const file = `src/${name.toLowerCase()}.ts`;
+      await hire(name, 'worker', [
+        { text: `Added ${file}.`, files: { [file]: `// ${name}\n` }, delayMs: 100 },
+      ]);
+    }
+    await say('@Ada @Bob @Cy each add your own file');
+
+    const diffs = await diffMessages();
+    expect(diffs.map((m) => m.meta?.type === 'diff' && m.meta.files).sort()).toEqual([
+      ['src/ada.ts'],
+      ['src/bob.ts'],
+      ['src/cy.ts'],
+    ]);
+    for (const name of names) {
+      const branch = `symposium/${name.toLowerCase()}`;
+      expect(sh(folder, 'log', '-1', '--format=%an', branch)).toBe(`${name} (Symposium agent)`);
+      expect(sh(folder, 'diff', '--name-only', `main...${branch}`)).toBe(
+        `src/${name.toLowerCase()}.ts`,
+      );
+    }
+    for (const diff of diffs) expect((await decide(diff, 'merge')).statusCode).toBe(200);
+    expect(sh(folder, 'ls-files', 'src').split('\n')).toEqual([
+      'src/ada.ts',
+      'src/bob.ts',
+      'src/cy.ts',
+    ]);
+  });
+
   it('merges only when the human approves, then updates the worker from main', async () => {
     await hire('Ada', 'worker', [
       { text: 'Cart.', files: { 'cart.ts': 'v1\n' } },

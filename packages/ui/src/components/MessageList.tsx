@@ -11,9 +11,11 @@ interface MessageListProps {
   messages: Message[];
   /** Every agent ever in the group, so old messages keep their author's name. */
   agents: Agent[];
+  /** Messages still waiting in an inbox, with the names of the busy agents they wait for. */
+  queuedFor: Map<number, string[]>;
 }
 
-export function MessageList({ groupId, messages, agents }: MessageListProps) {
+export function MessageList({ groupId, messages, agents, queuedFor }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const scrolledOnce = useRef(false);
   const names = agents.filter((agent) => agent.firedAt === null).map((agent) => agent.name);
@@ -46,6 +48,7 @@ export function MessageList({ groupId, messages, agents }: MessageListProps) {
           message={message}
           agents={agents}
           names={names}
+          queuedFor={queuedFor.get(message.id)}
         />
       ))}
     </div>
@@ -57,11 +60,13 @@ function MessageItem({
   message,
   agents,
   names,
+  queuedFor,
 }: {
   groupId: string;
   message: Message;
   agents: Agent[];
   names: string[];
+  queuedFor: string[] | undefined;
 }) {
   const time = (
     <time dateTime={new Date(message.createdAt).toISOString()}>
@@ -95,6 +100,14 @@ function MessageItem({
         {author && <span className={`role-badge role-${author.role}`}>{author.role}</span>}
         {author?.firedAt != null && <span className="muted">(left)</span>}
         {time}
+        {queuedFor && (
+          <span
+            className="queued-chip"
+            title="They are busy. This message is in their inbox and will be read in their next turn. Nothing was stopped."
+          >
+            queued for {queuedFor.join(', ')}
+          </span>
+        )}
       </header>
       <RichText text={message.body} names={names} />
     </article>

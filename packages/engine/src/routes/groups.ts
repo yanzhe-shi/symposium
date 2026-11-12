@@ -5,9 +5,11 @@ import { postNotice } from '../chat.js';
 import { prepareRepository } from '../git/repository.js';
 import { prepareProjectFolder } from '../project-folder.js';
 import type { CreateGroupRequest, Group, UpdateGroupRequest } from '../protocol.js';
+import type { TeamRunner } from '../routing/runner.js';
 import { createGroup, getGroup, listGroups, updateGroup } from '../store/groups.js';
 
 export const MAX_ROUNDS_LIMIT = 10;
+export const MAX_PARALLEL_LIMIT = 8;
 
 /** Loads a group or throws a 404. */
 export function requireGroup(ctx: AppContext, groupId: string): Group {
@@ -16,7 +18,11 @@ export function requireGroup(ctx: AppContext, groupId: string): Group {
   return group;
 }
 
-export function registerGroupRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function registerGroupRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  runner: TeamRunner,
+): void {
   app.get('/api/groups', async () => listGroups(ctx.db));
 
   app.get<{ Params: { groupId: string } }>('/api/groups/:groupId', async (request) =>
@@ -62,6 +68,8 @@ export function registerGroupRoutes(app: FastifyInstance, ctx: AppContext): void
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 80 },
             maxRounds: { type: 'integer', minimum: 1, maximum: MAX_ROUNDS_LIMIT },
+            maxParallel: { type: 'integer', minimum: 1, maximum: MAX_PARALLEL_LIMIT },
+            leadAsksFirst: { type: 'boolean' },
           },
           additionalProperties: false,
         },
@@ -72,8 +80,12 @@ export function registerGroupRoutes(app: FastifyInstance, ctx: AppContext): void
       const group = updateGroup(ctx.db, request.params.groupId, {
         name: request.body.name?.trim(),
         maxRounds: request.body.maxRounds,
+        maxParallel: request.body.maxParallel,
+        leadAsksFirst: request.body.leadAsksFirst,
       })!;
       ctx.hub.broadcast(group.id, { type: 'group.changed', group });
+      // A higher cap may let waiting agents start.
+      runner.pump(group.id);
       return group;
     },
   );

@@ -10,8 +10,12 @@ export interface Group {
   folderPath: string | null;
   /** Branch that workers branch from and merges go into. Set when the folder is prepared. */
   baseBranch: string | null;
-  /** How many times work may pass between agents before the team waits for the human. */
+  /** How many times work may pass between agents in one thread before it waits for the human. */
   maxRounds: number;
+  /** How many agents may work at the same time. */
+  maxParallel: number;
+  /** Whether the lead proposes a plan and waits for approval before assigning work. */
+  leadAsksFirst: boolean;
   createdAt: number;
 }
 
@@ -96,10 +100,29 @@ export interface Message {
   authorAgentId: string | null;
   body: string;
   meta: MessageMeta | null;
+  /** The human message that started this conversation thread. Null for most system messages. */
+  threadId: number | null;
+  /** For agent replies: how many hand-offs deep in the thread. 0 answers the human directly. */
+  round: number | null;
   createdAt: number;
 }
 
 export type AgentActivity = 'idle' | 'working';
+
+/** What one agent is doing, and the messages waiting in its inbox. */
+export interface AgentStatus {
+  agentId: string;
+  activity: AgentActivity;
+  /** Ids of messages waiting for the agent's next turn, oldest first. */
+  queuedMessageIds: number[];
+}
+
+/** Snapshot of a group's work, for a UI that just connected. */
+export interface TeamStatus {
+  /** True while anyone is working or has messages waiting. */
+  running: boolean;
+  agents: AgentStatus[];
+}
 
 /** Events the engine pushes to the UI over the WebSocket, per group. */
 export type ServerEvent =
@@ -108,6 +131,10 @@ export type ServerEvent =
   | { type: 'agents.changed' }
   | { type: 'group.changed'; group: Group }
   | { type: 'agent.activity'; agentId: string; activity: AgentActivity }
+  /** An agent's inbox changed: these messages are waiting for its next turn. */
+  | { type: 'agent.queue'; agentId: string; queuedMessageIds: number[] }
+  /** A waiting message was handed to the agent, whose turn on it has started. */
+  | { type: 'message.delivered'; messageId: number; agentId: string }
   | { type: 'run.status'; running: boolean }
   | { type: 'project.updated' };
 
@@ -123,6 +150,8 @@ export interface CreateGroupRequest {
 export interface UpdateGroupRequest {
   name?: string;
   maxRounds?: number;
+  maxParallel?: number;
+  leadAsksFirst?: boolean;
 }
 
 export interface ErrorResponse {

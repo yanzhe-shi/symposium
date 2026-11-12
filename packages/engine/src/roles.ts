@@ -22,7 +22,7 @@ export const ROLES: readonly RoleInfo[] = [
   {
     kind: 'scribe',
     title: 'Scribe',
-    summary: 'Keeps project.md up to date after each round of work. Use a small, cheap model.',
+    summary: 'Keeps project.md up to date whenever the team goes quiet. Use a small, cheap model.',
   },
 ];
 
@@ -53,4 +53,17 @@ export async function loadRoleText(rolesDir: string, role: RoleKind): Promise<st
   } catch {
     return `# ${role}`;
   }
+}
+
+const ASK_FIRST_BLOCK = /<!-- ask-first -->\s*([\s\S]*?)\s*<!-- \/ask-first -->[^\S\n]*\n?\n?/g;
+
+/**
+ * Role files can wrap lines in `<!-- ask-first -->` … `<!-- /ask-first -->`. Those lines apply
+ * only while the group's "lead asks before starting work" setting is on. The markers and the
+ * blank lines around them are removed either way, so a list stays one list.
+ */
+export function applyPlanApproval(roleText: string, leadAsksFirst: boolean): string {
+  return roleText.replace(ASK_FIRST_BLOCK, (_block, lines: string) =>
+    leadAsksFirst ? `${lines}\n` : '',
+  );
 }

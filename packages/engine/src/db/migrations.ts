@@ -63,6 +63,18 @@ export const migrations: readonly string[] = [
   `
   ALTER TABLE groups ADD COLUMN scribe_cursor INTEGER NOT NULL DEFAULT 0;
   `,
+
+  // 4: non-blocking chat (milestone 8). Every human message starts a thread; replies carry the
+  // thread and how many hand-offs deep they are. Groups get a cap on agents working at once and
+  // the "lead asks before starting work" setting. The default round limit goes from 3 to 6, and
+  // groups still on the old default move with it.
+  `
+  ALTER TABLE messages ADD COLUMN thread_id INTEGER;
+  ALTER TABLE messages ADD COLUMN round INTEGER;
+  ALTER TABLE groups ADD COLUMN max_parallel INTEGER NOT NULL DEFAULT 3;
+  ALTER TABLE groups ADD COLUMN lead_asks_first INTEGER NOT NULL DEFAULT 1;
+  UPDATE groups SET max_rounds = 6 WHERE max_rounds = 3;
+  `,
 ];
 
 export function getSchemaVersion(db: Database.Database): number {

@@ -66,7 +66,7 @@ Stop both with `Ctrl+C`.
 2. **Hire a lead.** In the Team panel click **Hire an agent**, name it (the name is how you @mention it), choose the **Lead** role, a provider and a model.
 3. **Hire a scribe** on a small model, so `project.md` stays current.
 4. **Tell the lead your goal.** It replies with a plan and asks for approval. It may also propose hires; click **Hire** on the ones you want.
-5. **Approve the plan.** The lead assigns tasks by @mentioning workers. Watch the activity dots in the Team panel.
+5. **Approve the plan.** The lead assigns tasks by @mentioning workers, who work at the same time. Each card in the Team panel shows Working, Idle or how many messages are queued.
 6. **Review diffs.** After a worker's turn, its changes appear in the chat as a diff. Click **Show diff**, then **Merge into main** or **Discard**.
 
 To make merging work, keep your project folder on its base branch (shown in the header). If you have uncommitted changes in the folder that touch the same files, git refuses the merge and Symposium tells you why. Nothing is changed in that case.
@@ -76,8 +76,14 @@ To make merging work, keep your project folder on its base branch (shown in the 
 ## Steering the team
 
 - **Talk to anyone directly** with `@Name`. A message that mentions nobody goes to the lead.
-- **Stop** the team with the Stop button next to "working…". Sending a new message also stops the current work and starts again from your message.
-- **Round limit** (header): how many hand-offs between agents are allowed before the team waits for you. Default 3.
+- **Keep talking.** A new message never stops anyone. If the agent it is for is busy, the message shows "queued for Ada" and Ada reads it, with anything else that arrived, in her next turn.
+- **Stop all** (next to "working…") cancels every turn and empties every inbox. **Stop** on an agent's card does the same for that agent only.
+- **`/stop`** as a message stops everyone. `/stop @Ada` stops only Ada.
+- **`/now @Ada …`** interrupts Ada's current turn and restarts her on that message.
+- **Round limit** (header): how many hand-offs between agents are allowed in one thread before it waits for you. Every message you send starts a new thread. Default 6.
+- **At once** (header): how many agents may work at the same time. Default 3.
+- **Lead asks before starting work** (header): on by default. Switch it off and the lead assigns tasks straight away instead of waiting for you to approve a plan.
+- **project.md updates** happen once the whole team has been idle for 30 seconds, not after every reply.
 - **Fire** an agent from the Team panel. Its branch, worktree and memory are kept. Hiring the same name again brings it back with its memory.
 - **project.md tab**: read or edit the shared project description.
 - **Memory**: read or edit what each agent has chosen to remember.

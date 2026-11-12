@@ -26,6 +26,8 @@ export interface ServerDeps {
   rolesDir?: string;
   /** Tests pass a factory that returns mock adapters. */
   createAdapter?: AdapterFactory;
+  /** How long a group must stay idle before the scribe updates project.md. */
+  scribeDelayMs?: number;
   logger?: FastifyServerOptions['logger'];
 }
 
@@ -52,9 +54,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     createAdapter: deps.createAdapter ?? defaultAdapterFactory,
   };
 
-  const runner = new TeamRunner(ctx, createRunnerHooks(ctx));
+  const runner = new TeamRunner(ctx, createRunnerHooks(ctx), {
+    scribeDelayMs: deps.scribeDelayMs,
+  });
   app.decorate('symposium', { ctx, runner });
-  app.addHook('onClose', async () => runner.stopAll());
+  app.addHook('onClose', async () => runner.shutdown());
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode ?? 500;
@@ -69,8 +73,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   await app.register(websocket);
 
   registerHealthRoutes(app);
-  registerGroupRoutes(app, ctx);
-  registerAgentRoutes(app, ctx);
+  registerGroupRoutes(app, ctx, runner);
+  registerAgentRoutes(app, ctx, runner);
   registerMessageRoutes(app, ctx, runner);
   registerRunRoutes(app, ctx, runner);
   registerDocumentRoutes(app, ctx);

@@ -8,6 +8,7 @@ import type {
   ProviderInfo,
   RoleInfo,
   ServerEvent,
+  TeamStatus,
   UpdateGroupRequest,
 } from '@symposium/engine/protocol';
 
@@ -57,8 +58,10 @@ export const api = {
     decision: 'approve-hire' | 'reject-hire' | 'merge' | 'discard',
   ) => send<Message>('POST', `${groupUrl(groupId)}/messages/${messageId}/${decision}`),
 
-  runStatus: (groupId: string) => request<{ running: boolean }>(`${groupUrl(groupId)}/run`),
-  stop: (groupId: string) => send<{ stopped: boolean }>('POST', `${groupUrl(groupId)}/stop`),
+  runStatus: (groupId: string) => request<TeamStatus>(`${groupUrl(groupId)}/run`),
+  stopAll: (groupId: string) => send<{ stopped: boolean }>('POST', `${groupUrl(groupId)}/stop`),
+  stopAgent: (groupId: string, agentId: string) =>
+    send<{ stopped: boolean }>('POST', `${groupUrl(groupId)}/agents/${agentId}/stop`),
 
   project: (groupId: string) => request<{ content: string }>(`${groupUrl(groupId)}/project`),
   saveProject: (groupId: string, content: string) =>

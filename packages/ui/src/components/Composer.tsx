@@ -13,21 +13,21 @@ export function Composer({
   placeholder: string;
 }) {
   const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
 
+  // The box is never locked: it clears at once so the next message can be typed while this one
+  // is on its way, and while the team is working.
   async function submit(): Promise<void> {
     const body = cleanDraft(draft);
-    if (sending || body === '') return;
-    setSending(true);
+    if (body === '') return;
+    setDraft('');
     setError(undefined);
     try {
       await onSend(body);
-      setDraft('');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSending(false);
+      // Give the text back, unless something new has been typed since.
+      setDraft((current) => (current === '' ? body : current));
     }
   }
 
@@ -55,11 +55,10 @@ export function Composer({
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={sending}
           autoFocus
         />
-        <button type="submit" disabled={sending || draft.trim() === ''}>
-          {sending ? 'Sending…' : 'Send'}
+        <button type="submit" disabled={draft.trim() === ''}>
+          Send
         </button>
       </div>
     </form>

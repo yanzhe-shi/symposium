@@ -41,7 +41,7 @@ export function ProjectPanel({ group, version }: { group: Group; version: number
   return (
     <div className="project-panel">
       <p className="muted small">
-        Every agent reads this before working. The scribe updates it after each round.
+        Every agent reads this before working. The scribe updates it when the team goes quiet.
       </p>
       {error && <p className="form-error">{error}</p>}
       {draft === undefined ? (

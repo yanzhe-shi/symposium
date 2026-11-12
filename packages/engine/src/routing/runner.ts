@@ -1,15 +1,17 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { AdapterError, CancelledError, DEFAULT_TIMEOUT_MS } from '@symposium/adapters';
 import { postMessage, postNotice } from '../chat.js';
 import type { AppContext } from '../context.js';
 import { appendMemory, memoryForPrompt, readMemory } from '../memory.js';
 import { projectForPrompt, readProjectFile } from '../project-file.js';
-import type { Agent, Group, HireRequest, Message } from '../protocol.js';
+import type { Agent, Group, HireRequest, Message, TeamStatus } from '../protocol.js';
 import { loadRoleText, roleAccess } from '../roles.js';
 import { getAgent, listAgents } from '../store/agents.js';
 import { logEvent } from '../store/events.js';
 import { getGroup } from '../store/groups.js';
 import { listMessages } from '../store/messages.js';
 import { validateHire } from '../team.js';
+import { parseCommand } from './commands.js';
 import { parseMentions } from './mentions.js';
 import { buildPrompt, buildSystemPrompt, LEAD_HISTORY } from './prompt.js';
 import { parseReplyBlocks } from './reply-blocks.js';
@@ -25,86 +27,360 @@ export interface RunnerHooks {
   prepareWorkspace(group: Group, agent: Agent): Promise<Workspace>;
   /** Called after each successful turn, e.g. to commit a worker's changes and post the diff. */
   afterTurn(group: Group, agent: Agent, workspace: Workspace, reply: Message): Promise<void>;
-  /** Called when a run ends without being stopped, e.g. to let the scribe update project.md. */
-  afterRun(group: Group, signal: AbortSignal): Promise<void>;
+  /** Called once the whole group has been idle for a while, to let the scribe update project.md. */
+  onIdle(group: Group, signal: AbortSignal): Promise<void>;
 }
 
-interface Turn {
-  agent: Agent;
+/** A message waiting for an agent's next turn. */
+interface InboxItem {
   trigger: Message;
+  /** The human message that started the conversation this belongs to. */
+  threadId: number;
+  /** How many hand-offs deep in the thread the agent's answer will be. */
+  round: number;
+  /** Whether the UI was told this message is waiting. */
+  announced: boolean;
+  /** Order of arrival across the group, so waiting agents start first come, first served. */
+  seq: number;
 }
 
-interface Run {
+interface ActiveTurn {
   controller: AbortController;
+  /** Settles when the turn has fully wound down, whether it finished, failed or was cancelled. */
   done: Promise<void>;
 }
 
+/** One agent's queue of messages. The agent works through it one turn at a time. */
+interface AgentInbox {
+  queue: InboxItem[];
+  turn?: ActiveTurn;
+  /** Set by `/now`: this agent starts before others that are waiting for a free slot. */
+  urgent: boolean;
+  /** The next turn replaces one that `/now` cut short. */
+  interrupted: boolean;
+}
+
+interface ScribeJob {
+  controller: AbortController;
+  /** True during the quiet period before the scribe starts. */
+  waiting: boolean;
+  done: Promise<void>;
+}
+
+interface GroupWork {
+  inboxes: Map<string, AgentInbox>;
+  scribe?: ScribeJob;
+  /** The group went idle again while the scribe was writing, so it should run once more. */
+  scribeAgain: boolean;
+  /** True while Stop all winds the group down, so turn endings don't wake the scribe. */
+  stopping: boolean;
+  /** The last `run.status` the UI was sent. */
+  announcedRunning: boolean;
+}
+
+export interface RunnerOptions {
+  /** How long the group must stay idle before the scribe updates project.md. */
+  scribeDelayMs?: number;
+}
+
+export const DEFAULT_SCRIBE_DELAY_MS = 30_000;
+
 /**
- * Runs the team's turns. The engine, not a model, decides turn order and when to stop:
- * - A human message goes to the agents it @mentions, or to the lead if it mentions nobody.
+ * Runs the team's turns. The engine, not a model, decides who works when and when to stop:
+ * - Every agent has an inbox and works through it one turn at a time. Different agents work in
+ *   parallel, up to the group's cap.
+ * - A human message goes to the agents it @mentions, or to the lead if it mentions nobody. It
+ *   never cancels work: a busy agent gets it, with anything else that arrived, in its next turn.
  * - An agent's reply goes to the agents it @mentions.
- * - Each hand-off between agents is a round. After the group's round limit the team waits for the human.
- * - A new human message or the Stop button cancels the current run.
- * Agents take turns one at a time, in mention order.
+ * - Every human message starts a thread. Each hand-off between agents in a thread is a round;
+ *   past the group's round limit that thread waits for the human. Other threads carry on.
+ * - Work stops only when the human asks: Stop all, Stop on one agent, `/stop` or `/now`.
+ * - When the whole group has been idle for a while, the scribe updates project.md.
  */
 export class TeamRunner {
-  private readonly runs = new Map<string, Run>();
-  /** Per-group queue so starting and stopping runs never interleave. */
-  private readonly locks = new Map<string, Promise<unknown>>();
+  private readonly groups = new Map<string, GroupWork>();
+  private readonly scribeDelayMs: number;
+  private nextSeq = 1;
 
   constructor(
     private readonly ctx: AppContext,
     private readonly hooks: RunnerHooks,
-  ) {}
-
-  isRunning(groupId: string): boolean {
-    return this.runs.has(groupId);
+    options: RunnerOptions = {},
+  ) {
+    this.scribeDelayMs = options.scribeDelayMs ?? DEFAULT_SCRIBE_DELAY_MS;
   }
 
-  /** Starts a run for a new human message, cancelling any run in progress. */
-  onHumanMessage(group: Group, message: Message): Promise<void> {
-    return this.serialize(group.id, async () => {
-      const interrupted = await this.cancel(group.id);
-      if (interrupted) {
-        postNotice(this.ctx, group.id, 'Stopped the current work to follow your new message.');
+  /**
+   * True while anyone on the team is working or has messages waiting. The scribe's housekeeping
+   * after the team goes quiet does not count; its own activity shows that.
+   */
+  isRunning(groupId: string): boolean {
+    const work = this.groups.get(groupId);
+    return work !== undefined && this.hasTeamWork(work);
+  }
+
+  /** What every active agent is doing, for a UI that just connected. */
+  status(groupId: string): TeamStatus {
+    const work = this.groups.get(groupId);
+    const scribeWorking = work?.scribe?.waiting === false;
+    return {
+      running: this.isRunning(groupId),
+      agents: listAgents(this.ctx.db, groupId).map((agent) => {
+        const inbox = work?.inboxes.get(agent.id);
+        const working = agent.role === 'scribe' ? scribeWorking : inbox?.turn !== undefined;
+        return {
+          agentId: agent.id,
+          activity: working ? 'working' : 'idle',
+          queuedMessageIds: inbox?.queue.map((item) => item.trigger.id) ?? [],
+        };
+      }),
+    };
+  }
+
+  /** Routes a new human message. Nothing in progress is cancelled unless the message says so. */
+  onHumanMessage(group: Group, message: Message): void {
+    const command = parseCommand(message.body);
+    if (command === 'stop') {
+      this.onStopCommand(group, message).catch((error: unknown) => {
+        postNotice(this.ctx, group.id, `Could not stop: ${String(error)}`, 'error');
+      });
+      return;
+    }
+
+    const urgent = command === 'now';
+    for (const agent of this.recipientsOfHuman(group, message)) {
+      const turn = this.groups.get(group.id)?.inboxes.get(agent.id)?.turn;
+      this.enqueue(
+        group.id,
+        agent.id,
+        { trigger: message, threadId: message.id, round: 0 },
+        urgent,
+      );
+      // `/now` cuts short the turn that was already going. An idle agent has simply started.
+      if (urgent && turn) this.interrupt(group, agent, turn);
+    }
+    // The scribe has no inbox: mentioning it asks for a project.md update right away.
+    if (this.mentionsScribe(group, message)) this.scheduleScribe(group.id, 0);
+  }
+
+  /** Cancels everything in the group and empties every inbox. Returns whether anything was going on. */
+  async stopGroup(groupId: string): Promise<boolean> {
+    const work = this.groups.get(groupId);
+    if (!work) return false;
+    const stopped = this.hasTeamWork(work) || work.scribe?.waiting === false;
+    const winding: Promise<void>[] = [];
+
+    work.stopping = true;
+    for (const [agentId, inbox] of work.inboxes) {
+      this.clearInbox(groupId, agentId, inbox);
+      if (inbox.turn) {
+        inbox.turn.controller.abort();
+        winding.push(inbox.turn.done);
       }
-      const turns = this.recipientsOfHuman(group, message);
-      // Mentioning only the scribe starts an empty run, whose end triggers a project.md update.
-      if (turns.length > 0 || this.mentionsScribe(group, message)) this.start(group.id, turns);
+    }
+    const scribe = work.scribe;
+    if (scribe) {
+      work.scribe = undefined;
+      work.scribeAgain = false;
+      scribe.controller.abort();
+      winding.push(scribe.done);
+    }
+    await Promise.all(winding);
+    work.stopping = false;
+    this.syncStatus(groupId);
+
+    if (stopped) {
+      logEvent(this.ctx.db, { groupId, kind: 'team.stopped' });
+      postNotice(this.ctx, groupId, 'You stopped the team.');
+    }
+    return stopped;
+  }
+
+  /** Cancels one agent's turn and empties its inbox. Returns whether there was anything to stop. */
+  async stopAgent(groupId: string, agent: Agent, announce = true): Promise<boolean> {
+    const work = this.groups.get(groupId);
+    if (!work) return false;
+    let stopped = false;
+    const winding: Promise<void>[] = [];
+
+    const scribe = work.scribe;
+    // A scribe that is only waiting for quiet is left alone: there is nothing to stop yet.
+    if (agent.role === 'scribe' && scribe && !scribe.waiting) {
+      stopped = true;
+      work.scribe = undefined;
+      work.scribeAgain = false;
+      scribe.controller.abort();
+      winding.push(scribe.done);
+    }
+    const inbox = work.inboxes.get(agent.id);
+    if (inbox) {
+      stopped ||= inbox.queue.length > 0 || inbox.turn !== undefined;
+      this.clearInbox(groupId, agent.id, inbox);
+      if (inbox.turn) {
+        inbox.turn.controller.abort();
+        winding.push(inbox.turn.done);
+      }
+    }
+    await Promise.all(winding);
+    this.syncStatus(groupId);
+
+    if (stopped) {
+      logEvent(this.ctx.db, { groupId, agentId: agent.id, kind: 'agent.stopped' });
+      if (announce) postNotice(this.ctx, groupId, `You stopped ${agent.name}.`);
+    }
+    return stopped;
+  }
+
+  /** Stops every group. Called when the server shuts down. */
+  async shutdown(): Promise<void> {
+    await Promise.all(
+      [...this.groups].map(async ([groupId, work]) => {
+        work.stopping = true;
+        const winding: Promise<void>[] = [];
+        for (const inbox of work.inboxes.values()) {
+          inbox.queue = [];
+          inbox.turn?.controller.abort();
+          if (inbox.turn) winding.push(inbox.turn.done);
+        }
+        if (work.scribe) {
+          work.scribe.controller.abort();
+          winding.push(work.scribe.done);
+        }
+        await Promise.all(winding);
+        this.groups.delete(groupId);
+      }),
+    );
+  }
+
+  /** Resolves when the group has nothing running, waiting or scheduled. For tests. */
+  async waitForIdle(groupId: string): Promise<void> {
+    for (;;) {
+      const work = this.groups.get(groupId);
+      const pending: Promise<void>[] = [];
+      for (const inbox of work?.inboxes.values() ?? []) {
+        if (inbox.turn) pending.push(inbox.turn.done);
+      }
+      if (work?.scribe) pending.push(work.scribe.done);
+      if (pending.length === 0) return;
+      await Promise.all(pending);
+    }
+  }
+
+  /** Starts waiting agents while the group is under its cap on agents working at once. */
+  pump(groupId: string): void {
+    const work = this.groups.get(groupId);
+    const group = getGroup(this.ctx.db, groupId);
+    if (!work || !group) return;
+    for (;;) {
+      const inboxes = [...work.inboxes.entries()];
+      const working = inboxes.filter(([, inbox]) => inbox.turn).length;
+      if (working >= group.maxParallel) break;
+      const waiting = inboxes
+        .filter(([, inbox]) => !inbox.turn && inbox.queue.length > 0)
+        .sort(
+          ([, a], [, b]) =>
+            Number(b.urgent) - Number(a.urgent) || a.queue[0]!.seq - b.queue[0]!.seq,
+        );
+      const next = waiting[0];
+      if (!next) break;
+      this.startTurn(groupId, work, next[0], next[1]);
+    }
+    this.syncStatus(groupId);
+  }
+
+  private workOf(groupId: string): GroupWork {
+    let work = this.groups.get(groupId);
+    if (!work) {
+      work = {
+        inboxes: new Map(),
+        scribeAgain: false,
+        stopping: false,
+        announcedRunning: false,
+      };
+      this.groups.set(groupId, work);
+    }
+    return work;
+  }
+
+  /** True while an agent other than the scribe is working or has messages waiting. */
+  private hasTeamWork(work: GroupWork): boolean {
+    for (const inbox of work.inboxes.values()) {
+      if (inbox.turn || inbox.queue.length > 0) return true;
+    }
+    return false;
+  }
+
+  private syncStatus(groupId: string): void {
+    const work = this.groups.get(groupId);
+    if (!work) return;
+    const running = this.isRunning(groupId);
+    if (running === work.announcedRunning) return;
+    work.announcedRunning = running;
+    this.ctx.hub.broadcast(groupId, { type: 'run.status', running });
+  }
+
+  private announceQueue(groupId: string, agentId: string, inbox: AgentInbox): void {
+    for (const item of inbox.queue) item.announced = true;
+    this.ctx.hub.broadcast(groupId, {
+      type: 'agent.queue',
+      agentId,
+      queuedMessageIds: inbox.queue.map((item) => item.trigger.id),
     });
   }
 
-  /** Cancels the group's run, if any, and waits for it to wind down. Returns whether one was running. */
-  stop(groupId: string): Promise<boolean> {
-    return this.serialize(groupId, () => this.cancel(groupId));
+  private clearInbox(groupId: string, agentId: string, inbox: AgentInbox): void {
+    inbox.urgent = false;
+    inbox.interrupted = false;
+    if (inbox.queue.length === 0) return;
+    inbox.queue = [];
+    this.announceQueue(groupId, agentId, inbox);
   }
 
-  private async cancel(groupId: string): Promise<boolean> {
-    const run = this.runs.get(groupId);
-    if (!run) return false;
-    run.controller.abort();
-    await run.done;
-    return true;
+  /** Puts a message in an agent's inbox. An idle agent starts on it at once. */
+  private enqueue(
+    groupId: string,
+    agentId: string,
+    message: Pick<InboxItem, 'trigger' | 'threadId' | 'round'>,
+    urgent = false,
+  ): void {
+    const work = this.workOf(groupId);
+    let inbox = work.inboxes.get(agentId);
+    if (!inbox) {
+      inbox = { queue: [], urgent: false, interrupted: false };
+      work.inboxes.set(agentId, inbox);
+    }
+    const item: InboxItem = { ...message, announced: false, seq: this.nextSeq++ };
+    if (urgent) {
+      inbox.queue.unshift(item);
+      inbox.urgent = true;
+    } else {
+      inbox.queue.push(item);
+    }
+    this.pump(groupId);
+    // Still there after pumping: the agent is busy, or the group is at its cap.
+    if (inbox.queue.includes(item)) this.announceQueue(groupId, agentId, inbox);
   }
 
-  private serialize<T>(groupId: string, task: () => Promise<T>): Promise<T> {
-    const previous = this.locks.get(groupId) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(task);
-    this.locks.set(groupId, next);
-    return next;
+  /** `/now`: cuts the agent's current turn short. Its inbox, with the urgent message first, runs next. */
+  private interrupt(group: Group, agent: Agent, turn: ActiveTurn): void {
+    const inbox = this.groups.get(group.id)?.inboxes.get(agent.id);
+    if (!inbox || inbox.turn !== turn || turn.controller.signal.aborted) return;
+    inbox.interrupted = true;
+    turn.controller.abort();
+    logEvent(this.ctx.db, { groupId: group.id, agentId: agent.id, kind: 'agent.interrupted' });
+    postNotice(this.ctx, group.id, `You interrupted ${agent.name} with an urgent message.`);
   }
 
-  async stopAll(): Promise<void> {
-    await Promise.all([...this.runs.keys()].map((groupId) => this.stop(groupId)));
-  }
-
-  /** Resolves when the group has no queued or running work. For tests. */
-  async waitForIdle(groupId: string): Promise<void> {
-    for (;;) {
-      await this.locks.get(groupId)?.catch(() => undefined);
-      const run = this.runs.get(groupId);
-      if (!run) return;
-      await run.done;
+  private async onStopCommand(group: Group, message: Message): Promise<void> {
+    const targets = parseMentions(message.body, listAgents(this.ctx.db, group.id));
+    if (targets.length === 0) {
+      if (!(await this.stopGroup(group.id))) postNotice(this.ctx, group.id, 'Nothing was running.');
+      return;
+    }
+    for (const agent of targets) {
+      if (!(await this.stopAgent(group.id, agent))) {
+        postNotice(this.ctx, group.id, `${agent.name} was not working on anything.`);
+      }
     }
   }
 
@@ -113,14 +389,14 @@ export class TeamRunner {
     return parseMentions(message.body, scribe).length > 0;
   }
 
-  private recipientsOfHuman(group: Group, message: Message): Turn[] {
+  private recipientsOfHuman(group: Group, message: Message): Agent[] {
     const team = listAgents(this.ctx.db, group.id).filter((agent) => agent.role !== 'scribe');
     const mentioned = parseMentions(message.body, team);
-    if (mentioned.length > 0) return mentioned.map((agent) => ({ agent, trigger: message }));
+    if (mentioned.length > 0) return mentioned;
     if (this.mentionsScribe(group, message)) return [];
 
     const lead = team.find((agent) => agent.role === 'lead');
-    if (lead) return [{ agent: lead, trigger: message }];
+    if (lead) return [lead];
 
     if (team.length > 0) {
       postNotice(
@@ -132,70 +408,157 @@ export class TeamRunner {
     return [];
   }
 
-  private start(groupId: string, firstTurns: Turn[]): void {
+  /** Hands the agent everything in its inbox as one turn. */
+  private startTurn(groupId: string, work: GroupWork, agentId: string, inbox: AgentInbox): void {
+    const items = inbox.queue;
+    const interrupted = inbox.interrupted;
+    inbox.queue = [];
+    inbox.urgent = false;
+    inbox.interrupted = false;
+
+    // The group is busy again, so a scribe update that was waiting for quiet starts over later.
+    if (work.scribe?.waiting) {
+      work.scribe.controller.abort();
+      work.scribe = undefined;
+    }
+    const waited = items.filter((item) => item.announced);
+    for (const item of waited) {
+      this.ctx.hub.broadcast(groupId, {
+        type: 'message.delivered',
+        messageId: item.trigger.id,
+        agentId,
+      });
+    }
+    if (waited.length > 0) this.announceQueue(groupId, agentId, inbox);
+
     const controller = new AbortController();
-    const done = this.execute(groupId, firstTurns, controller.signal)
+    const turn: ActiveTurn = { controller, done: Promise.resolve() };
+    inbox.turn = turn;
+    turn.done = this.runInbox(groupId, agentId, items, interrupted, controller.signal)
       .catch((error: unknown) => {
         if (!(error instanceof CancelledError)) {
-          postNotice(this.ctx, groupId, `The run failed: ${String(error)}`, 'error');
+          postNotice(this.ctx, groupId, `A turn failed: ${String(error)}`, 'error');
         }
       })
       .finally(() => {
-        this.runs.delete(groupId);
-        this.ctx.hub.broadcast(groupId, { type: 'run.status', running: false });
+        inbox.turn = undefined;
+        this.pump(groupId);
+        if (!work.stopping && !this.hasTeamWork(work)) {
+          this.scheduleScribe(groupId, this.scribeDelayMs);
+        }
       });
-    this.runs.set(groupId, { controller, done });
-    this.ctx.hub.broadcast(groupId, { type: 'run.status', running: true });
   }
 
-  private async execute(groupId: string, firstTurns: Turn[], signal: AbortSignal): Promise<void> {
-    let wave = firstTurns;
-    let round = 0;
+  private async runInbox(
+    groupId: string,
+    agentId: string,
+    items: InboxItem[],
+    interrupted: boolean,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const group = getGroup(this.ctx.db, groupId);
+    const agent = getAgent(this.ctx.db, agentId);
+    if (!group || !agent || agent.firedAt !== null) return;
 
-    while (wave.length > 0) {
-      const group = getGroup(this.ctx.db, groupId)!;
-      if (round > group.maxRounds) {
-        const waiting = wave.map((turn) => turn.agent.name).join(', ');
-        postNotice(
-          this.ctx,
-          groupId,
-          `Round limit reached (${group.maxRounds}). The team is waiting for you before ${waiting} continue${wave.length === 1 ? 's' : ''}. Reply to carry on, or raise the limit.`,
-          'warning',
-        );
+    // The reply joins the newest thread among the messages it answers. Within that thread it
+    // takes the deepest round, so batching can never be used to dodge the round limit.
+    const threadId = Math.max(...items.map((item) => item.threadId));
+    const round = Math.max(
+      ...items.filter((item) => item.threadId === threadId).map((item) => item.round),
+    );
+    const triggers = items.map((item) => item.trigger).sort((a, b) => a.id - b.id);
+
+    const reply = await this.runTurn(
+      group,
+      agent,
+      { triggers, threadId, round, interrupted },
+      signal,
+    );
+    // A stopped agent hands nothing on, even if its reply got out just before the stop.
+    if (!reply || signal.aborted) return;
+    this.routeReply(groupId, agent, reply, threadId, round);
+  }
+
+  /** Queues the teammates a reply mentions, one round deeper in its thread. */
+  private routeReply(
+    groupId: string,
+    author: Agent,
+    reply: Message,
+    threadId: number,
+    round: number,
+  ): void {
+    const group = getGroup(this.ctx.db, groupId)!;
+    const team = listAgents(this.ctx.db, groupId).filter(
+      (member) => member.role !== 'scribe' && member.id !== author.id,
+    );
+    const mentioned = parseMentions(reply.body, team);
+    if (mentioned.length === 0) return;
+
+    if (round + 1 > group.maxRounds) {
+      const waiting = mentioned.map((agent) => agent.name).join(', ');
+      postMessage(this.ctx, {
+        groupId,
+        authorKind: 'system',
+        body: `Round limit reached (${group.maxRounds}). ${waiting} ${mentioned.length === 1 ? 'is' : 'are'} waiting for you before continuing this thread. Reply to carry on, or raise the limit.`,
+        meta: { type: 'notice', level: 'warning' },
+        threadId,
+      });
+      return;
+    }
+    for (const agent of mentioned) {
+      this.enqueue(groupId, agent.id, { trigger: reply, threadId, round: round + 1 });
+    }
+  }
+
+  /**
+   * Asks for a project.md update once the group has been quiet for `delayMs`. Asking again
+   * restarts the wait. If the scribe is already writing, it runs once more afterwards.
+   */
+  private scheduleScribe(groupId: string, delayMs: number): void {
+    const work = this.workOf(groupId);
+    if (work.scribe) {
+      if (!work.scribe.waiting) {
+        work.scribeAgain = true;
         return;
       }
+      work.scribe.controller.abort();
+    }
 
-      const next: Turn[] = [];
-      for (const turn of wave) {
-        if (signal.aborted) throw new CancelledError();
-        const agent = getAgent(this.ctx.db, turn.agent.id);
-        if (!agent || agent.firedAt !== null) continue;
-
-        const reply = await this.runTurn(group, agent, turn.trigger, signal);
-        if (!reply) continue;
-        const team = listAgents(this.ctx.db, groupId).filter(
-          (member) => member.role !== 'scribe' && member.id !== agent.id,
-        );
-        for (const mentioned of parseMentions(reply.body, team)) {
-          if (!next.some((queued) => queued.agent.id === mentioned.id)) {
-            next.push({ agent: mentioned, trigger: reply });
+    const controller = new AbortController();
+    const job: ScribeJob = { controller, waiting: true, done: Promise.resolve() };
+    work.scribe = job;
+    job.done = (async () => {
+      try {
+        await sleep(delayMs, undefined, { signal: controller.signal });
+        const group = getGroup(this.ctx.db, groupId);
+        if (!group) return;
+        job.waiting = false;
+        await this.hooks.onIdle(group, controller.signal);
+      } catch (error) {
+        if (!controller.signal.aborted && !(error instanceof CancelledError)) {
+          postNotice(this.ctx, groupId, `The scribe failed: ${String(error)}`, 'error');
+        }
+      } finally {
+        // A job that was cancelled or replaced has already been taken off the group.
+        if (work.scribe === job) {
+          work.scribe = undefined;
+          if (work.scribeAgain) {
+            work.scribeAgain = false;
+            if (!this.hasTeamWork(work)) this.scheduleScribe(groupId, this.scribeDelayMs);
           }
         }
       }
-      wave = next;
-      round++;
-    }
-
-    if (!signal.aborted) await this.hooks.afterRun(getGroup(this.ctx.db, groupId)!, signal);
+    })();
   }
 
   /** One agent turn. Returns the agent's message, or undefined if the turn failed. */
   private async runTurn(
     group: Group,
     agent: Agent,
-    trigger: Message,
+    turn: { triggers: Message[]; threadId: number; round: number; interrupted: boolean },
     signal: AbortSignal,
   ): Promise<Message | undefined> {
+    const { triggers, threadId, round } = turn;
     const { ctx } = this;
     ctx.hub.broadcast(group.id, { type: 'agent.activity', agentId: agent.id, activity: 'working' });
     const started = Date.now();
@@ -213,7 +576,8 @@ export class TeamRunner {
         projectMd: projectForPrompt(await readProjectFile(group.folderPath)),
         memory: memoryForPrompt(await readMemory(ctx.dataDir, agent.id)),
         history: listMessages(ctx.db, group.id, { limit: Math.max(LEAD_HISTORY, 200) }),
-        trigger,
+        triggers,
+        interrupted: turn.interrupted,
       };
 
       const result = await ctx.createAdapter(agent).run({
@@ -221,7 +585,7 @@ export class TeamRunner {
         model: agent.model,
         systemPrompt: buildSystemPrompt(promptInput),
         prompt: buildPrompt(promptInput),
-        trigger: trigger.body,
+        trigger: triggers.map((trigger) => trigger.body).join('\n\n'),
         workingDirectory: workspace.cwd,
         access,
         signal,
@@ -235,6 +599,8 @@ export class TeamRunner {
         authorKind: 'agent',
         authorAgentId: agent.id,
         body: parsed.text || '(no message)',
+        threadId,
+        round,
       });
 
       logEvent(ctx.db, {
@@ -244,7 +610,9 @@ export class TeamRunner {
         detail: {
           provider: agent.provider,
           model: agent.model,
-          triggerMessageId: trigger.id,
+          triggerMessageIds: triggers.map((trigger) => trigger.id),
+          threadId,
+          round,
           replyMessageId: reply.id,
           durationMs: Date.now() - started,
           costUsd: result.costUsd,

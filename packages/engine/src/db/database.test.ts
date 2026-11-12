@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from './database.js';
 import { getSchemaVersion, migrations, runMigrations } from './migrations.js';
@@ -31,6 +32,31 @@ describe('openDatabase', () => {
     const db = openDatabase(':memory:');
     expect(() => runMigrations(db)).not.toThrow();
     expect(getSchemaVersion(db)).toBe(migrations.length);
+  });
+
+  it('moves groups on the old default round limit to the new one (migration 4)', () => {
+    const db = new Database(':memory:');
+    db.exec(migrations.slice(0, 3).join('\n'));
+    db.pragma('user_version = 3');
+    db.prepare("INSERT INTO groups (id, name, created_at) VALUES ('old', 'Old default', 1)").run();
+    db.prepare(
+      "INSERT INTO groups (id, name, max_rounds, created_at) VALUES ('own', 'Chosen', 2, 1)",
+    ).run();
+    db.prepare(
+      "INSERT INTO messages (group_id, author_kind, body, created_at) VALUES ('old', 'human', 'hi', 1)",
+    ).run();
+
+    runMigrations(db);
+    const rounds = db.prepare('SELECT id, max_rounds, max_parallel, lead_asks_first FROM groups');
+    expect(rounds.all()).toEqual([
+      { id: 'old', max_rounds: 6, max_parallel: 3, lead_asks_first: 1 },
+      { id: 'own', max_rounds: 2, max_parallel: 3, lead_asks_first: 1 },
+    ]);
+    // Messages from before threads existed stay outside any thread.
+    expect(db.prepare('SELECT thread_id, round FROM messages').get()).toEqual({
+      thread_id: null,
+      round: null,
+    });
   });
 
   it('refuses a database from a newer engine', () => {

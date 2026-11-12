@@ -69,17 +69,36 @@ async function recordWork(
   });
 }
 
+/**
+ * Agents work in parallel, but they share one git repository. Symposium's own git steps for a
+ * group (opening worktrees, committing, merging, discarding) run one at a time, in order.
+ */
+const gitQueues = new Map<string, Promise<unknown>>();
+
+function oneAtATime<T>(groupId: string, step: () => Promise<T>): Promise<T> {
+  const previous = gitQueues.get(groupId) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(step);
+  gitQueues.set(groupId, next);
+  void next
+    .catch(() => undefined)
+    .finally(() => {
+      if (gitQueues.get(groupId) === next) gitQueues.delete(groupId);
+    });
+  return next;
+}
+
 export function createRunnerHooks(ctx: AppContext): RunnerHooks {
   return {
     async prepareWorkspace(group, agent) {
       // Only workers edit, and only in their own worktree. Everyone else reads the project folder.
       if (agent.role !== 'worker' || !group.baseBranch) return { cwd: group.folderPath! };
-      const worktree = await ensureWorktree(ctx.dataDir, group, agent);
+      const worktree = await oneAtATime(group.id, () => ensureWorktree(ctx.dataDir, group, agent));
       if (worktree.warning) postNotice(ctx, group.id, worktree.warning, 'warning');
       return { cwd: worktree.path, branch: worktree.branch };
     },
-    afterTurn: (group, agent, workspace, reply) => recordWork(ctx, group, agent, workspace, reply),
-    afterRun: async (group, signal) => {
+    afterTurn: (group, agent, workspace, reply) =>
+      oneAtATime(group.id, () => recordWork(ctx, group, agent, workspace, reply)),
+    onIdle: async (group, signal) => {
       await updateProjectFile(ctx, group, signal);
     },
   };
@@ -93,7 +112,11 @@ function requirePendingDiff(message: Message) {
 }
 
 /** Merges the work shown in a diff message. The human's approval is the request itself. */
-export async function mergeDiff(ctx: AppContext, group: Group, message: Message): Promise<Message> {
+export function mergeDiff(ctx: AppContext, group: Group, message: Message): Promise<Message> {
+  return oneAtATime(group.id, () => mergeDiffNow(ctx, group, message));
+}
+
+async function mergeDiffNow(ctx: AppContext, group: Group, message: Message): Promise<Message> {
   const meta = requirePendingDiff(message);
   const agent = getAgent(ctx.db, meta.agentId);
   if (!agent) throw notFound('Agent not found');
@@ -120,11 +143,11 @@ export async function mergeDiff(ctx: AppContext, group: Group, message: Message)
   return updated;
 }
 
-export async function discardDiff(
-  ctx: AppContext,
-  group: Group,
-  message: Message,
-): Promise<Message> {
+export function discardDiff(ctx: AppContext, group: Group, message: Message): Promise<Message> {
+  return oneAtATime(group.id, () => discardDiffNow(ctx, group, message));
+}
+
+async function discardDiffNow(ctx: AppContext, group: Group, message: Message): Promise<Message> {
   const meta = requirePendingDiff(message);
   const agent = getAgent(ctx.db, meta.agentId);
   if (!agent) throw notFound('Agent not found');

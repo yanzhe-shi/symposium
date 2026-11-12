@@ -1,10 +1,13 @@
 import type { Agent, Message } from '@symposium/engine/protocol';
+import { agentStatusLabel } from './components/TeamPanel.tsx';
 import { describe, expect, it } from 'vitest';
 import {
   activeAgents,
   groupReducer,
   initialGroupState,
   mergeMessages,
+  queuedCount,
+  queuedFor,
   workingAgents,
 } from './group-state.ts';
 
@@ -16,6 +19,8 @@ function message(id: number, body = `message ${id}`): Message {
     authorAgentId: null,
     body,
     meta: null,
+    threadId: id,
+    round: null,
     createdAt: id,
   };
 }
@@ -61,18 +66,73 @@ describe('mergeMessages', () => {
 });
 
 describe('groupReducer', () => {
-  it('tracks who is working and clears it when the run ends', () => {
-    let state = groupReducer(initialGroupState, {
-      type: 'agentsLoaded',
-      agents: [agent('a'), agent('b'), agent('old', 5)],
-    });
+  const team = { type: 'agentsLoaded' as const, agents: [agent('a'), agent('b'), agent('old', 5)] };
+
+  it('tracks several agents working at once, each until its own turn ends', () => {
+    let state = groupReducer(initialGroupState, team);
     state = groupReducer(state, { type: 'running', running: true });
     state = groupReducer(state, { type: 'activity', agentId: 'a', activity: 'working' });
-    expect(workingAgents(state).map((a) => a.id)).toEqual(['a']);
+    state = groupReducer(state, { type: 'activity', agentId: 'b', activity: 'working' });
+    expect(workingAgents(state).map((a) => a.id)).toEqual(['a', 'b']);
     expect(activeAgents(state).map((a) => a.id)).toEqual(['a', 'b']);
 
-    state = groupReducer(state, { type: 'running', running: false });
-    expect(workingAgents(state)).toEqual([]);
+    state = groupReducer(state, { type: 'activity', agentId: 'a', activity: 'idle' });
+    expect(workingAgents(state).map((a) => a.id)).toEqual(['b']);
+  });
+
+  it('shows a message as queued for a busy agent until it is delivered', () => {
+    let state = groupReducer(initialGroupState, team);
+    state = groupReducer(state, { type: 'queue', agentId: 'a', queuedMessageIds: [7, 9] });
+    state = groupReducer(state, { type: 'queue', agentId: 'b', queuedMessageIds: [9] });
+    expect(queuedCount(state, 'a')).toBe(2);
+    expect(queuedFor(state)).toEqual(
+      new Map([
+        [7, ['a']],
+        [9, ['a', 'b']],
+      ]),
+    );
+
+    state = groupReducer(state, { type: 'delivered', agentId: 'a', messageId: 9 });
+    expect(queuedFor(state)).toEqual(
+      new Map([
+        [7, ['a']],
+        [9, ['b']],
+      ]),
+    );
+    // A repeat, or a delivery we never saw queued, changes nothing.
+    expect(groupReducer(state, { type: 'delivered', agentId: 'a', messageId: 9 })).toBe(state);
+
+    state = groupReducer(state, { type: 'queue', agentId: 'a', queuedMessageIds: [] });
+    state = groupReducer(state, { type: 'delivered', agentId: 'b', messageId: 9 });
+    expect(queuedFor(state).size).toBe(0);
+    expect(queuedCount(state, 'a')).toBe(0);
+  });
+
+  it('replaces activity and queues with a fresh snapshot after a reconnect', () => {
+    let state = groupReducer(initialGroupState, team);
+    state = groupReducer(state, { type: 'activity', agentId: 'a', activity: 'working' });
+    state = groupReducer(state, { type: 'queue', agentId: 'a', queuedMessageIds: [3] });
+    state = groupReducer(state, {
+      type: 'statusLoaded',
+      status: {
+        running: true,
+        agents: [
+          { agentId: 'a', activity: 'idle', queuedMessageIds: [] },
+          { agentId: 'b', activity: 'working', queuedMessageIds: [4] },
+        ],
+      },
+    });
+    expect(state.running).toBe(true);
+    expect(workingAgents(state).map((a) => a.id)).toEqual(['b']);
+    expect(queuedFor(state)).toEqual(new Map([[4, ['b']]]));
+  });
+
+  it('labels an agent card by what the agent is doing', () => {
+    expect(agentStatusLabel(false, 0)).toBe('Idle');
+    expect(agentStatusLabel(true, 0)).toBe('Working');
+    expect(agentStatusLabel(true, 2)).toBe('Working · 2 queued');
+    // Waiting for a free slot under the group's cap.
+    expect(agentStatusLabel(false, 1)).toBe('1 queued');
   });
 
   it('counts project.md updates and resets', () => {

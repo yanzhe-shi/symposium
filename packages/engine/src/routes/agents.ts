@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.js';
 import type { HireRequest } from '../protocol.js';
 import { ROLES } from '../roles.js';
+import type { TeamRunner } from '../routing/runner.js';
 import { listAgents } from '../store/agents.js';
 import { fire, hire } from '../team.js';
 import { requireGroup } from './groups.js';
@@ -29,7 +30,11 @@ export const hireBodySchema = {
   additionalProperties: false,
 } as const;
 
-export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function registerAgentRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  runner: TeamRunner,
+): void {
   app.get('/api/providers', async () => PROVIDERS);
   app.get('/api/roles', async () => ROLES);
 
@@ -63,7 +68,10 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     '/api/groups/:groupId/agents/:agentId',
     async (request) => {
       const group = requireGroup(ctx, request.params.groupId);
-      return fire(ctx, group, request.params.agentId);
+      const fired = fire(ctx, group, request.params.agentId);
+      // Someone who left the team stops working and takes no more messages.
+      await runner.stopAgent(group.id, fired, false);
+      return fired;
     },
   );
 }
