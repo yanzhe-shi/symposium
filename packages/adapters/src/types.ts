@@ -32,6 +32,26 @@ export const EFFORT_LEVELS: readonly EffortLevel[] = [
   'max',
 ];
 
+/**
+ * What an agent did part-way through a turn:
+ * - `text`: something it said before its final reply
+ * - `read`, `edit`, `search`, `command`: a tool call of that sort. Edits are reported once
+ *   they have happened; the others when they start
+ * - `tool`: any other tool
+ * - `denied`: a tool call the provider's own sandbox refused
+ */
+export type AgentEventKind = 'text' | 'read' | 'edit' | 'search' | 'command' | 'tool' | 'denied';
+
+export interface AgentEvent {
+  kind: AgentEventKind;
+  /** The provider's name for the tool, such as `Read` or `write_file`. */
+  tool?: string;
+  /** What the tool was used on: a path relative to the working directory, a pattern or a command. */
+  target?: string;
+  /** One line for the activity timeline, such as "read src/cart.ts". */
+  summary: string;
+}
+
 export interface AgentTask {
   agentName: string;
   model: string;
@@ -47,6 +67,8 @@ export interface AgentTask {
   effort?: EffortLevel;
   /** Terminal command mode. See `CommandMode`. */
   commands?: CommandMode;
+  /** Called as the agent works, for providers that report progress. Must not throw. */
+  onEvent?: (event: AgentEvent) => void;
   signal?: AbortSignal;
   timeoutMs?: number;
 }

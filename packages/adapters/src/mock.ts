@@ -5,6 +5,7 @@ import {
   AdapterError,
   CancelledError,
   type AgentAdapter,
+  type AgentEvent,
   type AgentReply,
   type AgentTask,
 } from './types.js';
@@ -13,6 +14,8 @@ export interface MockReply {
   text: string;
   /** Files to write in the working directory, path -> content. Simulates an agent editing code. */
   files?: Record<string, string>;
+  /** Progress to report at the start of the turn, as a streaming provider would. */
+  events?: AgentEvent[];
   delayMs?: number;
   /** Fail the turn with this message instead of replying. */
   error?: string;
@@ -49,6 +52,7 @@ export class MockAdapter implements AgentAdapter {
     const index = this.calls.length;
     this.calls.push(task);
     const reply = await this.responder(task, index);
+    for (const event of reply.events ?? []) task.onEvent?.(event);
 
     if (reply.delayMs) {
       try {

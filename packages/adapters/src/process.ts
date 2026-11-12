@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { delimiter, isAbsolute, join } from 'node:path';
@@ -13,6 +14,8 @@ export interface ProcessOptions {
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Called with each complete line of stdout as it arrives, for CLIs that stream progress. */
+  onStdoutLine?: (line: string) => void;
 }
 
 export interface ProcessResult {
@@ -26,7 +29,7 @@ const KILL_GRACE_MS = 3000;
 
 /** Runs a command without a shell and collects its output. Rejects on abort, timeout or spawn failure. */
 export function runProcess(options: ProcessOptions): Promise<ProcessResult> {
-  const { command, args, cwd, input, env, signal, timeoutMs } = options;
+  const { command, args, cwd, input, env, signal, timeoutMs, onStdoutLine } = options;
   if (signal?.aborted) return Promise.reject(new CancelledError());
 
   return new Promise((resolve, reject) => {
@@ -84,6 +87,21 @@ export function runProcess(options: ProcessOptions): Promise<ProcessResult> {
 
     child.stdout.on('data', collect(stdout));
     child.stderr.on('data', collect(stderr));
+    if (onStdoutLine) {
+      // A chunk can end in the middle of a line, or of a character.
+      const decoder = new StringDecoder('utf8');
+      let partial = '';
+      const feed = (text: string): void => {
+        const lines = (partial + text).split('\n');
+        partial = lines.pop()!;
+        for (const line of lines) onStdoutLine(line.replace(/\r$/, ''));
+      };
+      child.stdout.on('data', (chunk: Buffer) => feed(decoder.write(chunk)));
+      child.stdout.on('end', () => {
+        feed(decoder.end());
+        if (partial !== '') onStdoutLine(partial);
+      });
+    }
     child.on('error', (error: NodeJS.ErrnoException) => {
       const message =
         error.code === 'ENOENT'
