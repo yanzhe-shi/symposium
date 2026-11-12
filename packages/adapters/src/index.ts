@@ -5,3 +5,4 @@ export { AntigravityAdapter } from './antigravity.js';
 export { OpenAICompatibleAdapter, OLLAMA_BASE_URL } from './openai-compatible.js';
 export { reportingFileChanges } from './file-changes.js';
 export { createAdapter, isProviderId, PROVIDERS } from './registry.js';
+export { listModels, parseAgyModels } from './models.js';

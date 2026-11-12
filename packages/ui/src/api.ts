@@ -5,10 +5,14 @@ import type {
   Group,
   HireRequest,
   Message,
+  ModelList,
+  ProviderId,
+  ProviderOptions,
   ProviderInfo,
   RoleInfo,
   ServerEvent,
   TeamStatus,
+  UpdateAgentRequest,
   UpdateGroupRequest,
 } from '@symposium/engine/protocol';
 
@@ -40,11 +44,20 @@ export const api = {
     send<Group>('PATCH', groupUrl(groupId), changes),
 
   providers: () => request<ProviderInfo[]>('/api/providers'),
+  /** The models a provider offers right now, asked with the agent's own provider options. */
+  models: (providerId: ProviderId, options: ProviderOptions = {}) => {
+    const query = new URLSearchParams(
+      Object.entries(options).filter((entry): entry is [string, string] => Boolean(entry[1])),
+    );
+    return request<ModelList>(`/api/providers/${providerId}/models?${query.toString()}`);
+  },
   roles: () => request<RoleInfo[]>('/api/roles'),
 
   agents: (groupId: string) => request<Agent[]>(`${groupUrl(groupId)}/agents?includeFired=true`),
   hire: (groupId: string, hire: HireRequest) =>
     send<Agent>('POST', `${groupUrl(groupId)}/agents`, hire),
+  editAgent: (groupId: string, agentId: string, changes: UpdateAgentRequest) =>
+    send<Agent>('PATCH', `${groupUrl(groupId)}/agents/${agentId}`, changes),
   fire: (groupId: string, agentId: string) =>
     send<Agent>('DELETE', `${groupUrl(groupId)}/agents/${agentId}`),
 

@@ -3,7 +3,20 @@ import { join } from 'node:path';
 import type { AgentAccess } from '@symposium/adapters';
 import type { RoleInfo, RoleKind } from './protocol.js';
 
-export const ROLES: readonly RoleInfo[] = [
+/** What each role may touch unless the human chooses otherwise. Fixed by the engine, not by the model. */
+export function roleAccess(role: RoleKind): AgentAccess {
+  switch (role) {
+    case 'worker':
+      return 'edit';
+    case 'lead':
+    case 'reviewer':
+      return 'read';
+    case 'scribe':
+      return 'none';
+  }
+}
+
+const ROLE_TEXT: readonly Omit<RoleInfo, 'defaultFiles'>[] = [
   {
     kind: 'lead',
     title: 'Lead',
@@ -26,25 +39,17 @@ export const ROLES: readonly RoleInfo[] = [
   },
 ];
 
+export const ROLES: readonly RoleInfo[] = ROLE_TEXT.map((role) => ({
+  ...role,
+  defaultFiles: roleAccess(role.kind),
+}));
+
 export function isRoleKind(value: string): value is RoleKind {
   return ROLES.some((role) => role.kind === value);
 }
 
 /** One lead and one scribe per group. Any number of workers and reviewers. */
 export const SINGLE_SEAT_ROLES: readonly RoleKind[] = ['lead', 'scribe'];
-
-/** What each role may touch. Fixed by the engine, not by the model. */
-export function roleAccess(role: RoleKind): AgentAccess {
-  switch (role) {
-    case 'worker':
-      return 'edit';
-    case 'lead':
-    case 'reviewer':
-      return 'read';
-    case 'scribe':
-      return 'none';
-  }
-}
 
 /** The role's built-in job description from `roles/<kind>.md`. */
 export async function loadRoleText(rolesDir: string, role: RoleKind): Promise<string> {

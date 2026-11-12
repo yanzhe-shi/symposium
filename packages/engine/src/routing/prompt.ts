@@ -1,6 +1,6 @@
 import type { AgentAccess } from '@symposium/adapters';
 import type { Agent, Group, Message } from '../protocol.js';
-import { applyPlanApproval } from '../roles.js';
+import { applyPlanApproval, roleAccess } from '../roles.js';
 
 /** Upper bound on the conversation part of a prompt, in characters. Oldest messages go first. */
 export const MAX_TRANSCRIPT_CHARS = 60_000;
@@ -89,6 +89,12 @@ export function buildSystemPrompt(input: PromptInput): string {
       '- Teammates work at the same time, and the CEO can write at any moment without stopping anyone. Messages that arrive while you work reach you together in your next turn: answer them all in one reply.',
       '- Keep replies short and concrete. No greetings or sign-offs.',
       accessRules(access, branch),
+      // The role text describes the role's usual access. Say so when this agent's differs.
+      ...(access === roleAccess(agent.role)
+        ? []
+        : [
+            '- The CEO set this file access for you. It replaces anything your role description says about reading or editing files.',
+          ]),
     ].join('\n'),
     [
       '## Your memory',

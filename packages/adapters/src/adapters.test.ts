@@ -4,10 +4,11 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AntigravityAdapter, parseAntigravityOutput } from './antigravity.js';
+import { AntigravityAdapter, antigravityArgs, parseAntigravityOutput } from './antigravity.js';
 import { ClaudeCodeAdapter, claudeCodeArgs, parseClaudeOutput } from './claude-code.js';
 import { changedBetween, parsePorcelainZ, reportingFileChanges } from './file-changes.js';
 import { MockAdapter } from './mock.js';
+import { listModels, parseAgyModels } from './models.js';
 import { OpenAICompatibleAdapter } from './openai-compatible.js';
 import { cleanTerminalOutput, commandExists, runProcess } from './process.js';
 import { createAdapter, PROVIDERS } from './registry.js';
@@ -152,6 +153,25 @@ describe('ClaudeCodeAdapter', () => {
     expect(editArgs).toContain('acceptEdits');
   });
 
+  it('passes the model and effort through, and leaves a default effort to the CLI', () => {
+    const args = claudeCodeArgs(task({ model: 'claude-opus-5-5', effort: 'high' }));
+    expect(args.slice(args.indexOf('--model'), args.indexOf('--model') + 2)).toEqual([
+      '--model',
+      'claude-opus-5-5',
+    ]);
+    expect(args.slice(args.indexOf('--effort'))).toEqual(['--effort', 'high']);
+    expect(claudeCodeArgs(task({ effort: 'default' }))).not.toContain('--effort');
+    expect(claudeCodeArgs(task())).not.toContain('--effort');
+  });
+
+  it('offers no command tools in any command mode until approvals exist', () => {
+    for (const commands of ['off', 'ask', 'allowlist', 'auto'] as const) {
+      const args = claudeCodeArgs(task({ access: 'edit', commands }));
+      expect(args[args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,Edit,Write');
+      expect(args).toContain('--restricted');
+    }
+  });
+
   it('sends the prompt on stdin and parses the JSON result', async () => {
     const argsFile = join(dir, 'args.txt');
     const stdinFile = join(dir, 'stdin.txt');
@@ -201,6 +221,39 @@ describe('AntigravityAdapter', () => {
     expect(args).toContain('Please say hello.');
     expect(args).toContain('accept-edits');
     expect(args).toContain('--sandbox');
+  });
+
+  it('passes the model and effort through, and keeps the sandbox in every command mode', () => {
+    const args = antigravityArgs(task({ model: 'gpt-oss-120b', effort: 'max' }));
+    expect(args.slice(-4)).toEqual(['--model', 'gpt-oss-120b', '--effort', 'max']);
+    expect(antigravityArgs(task({ effort: 'default' }))).not.toContain('--effort');
+    expect(antigravityArgs(task({ access: 'edit', commands: 'auto' }))).toContain('--sandbox');
+  });
+
+  it('lets the effort setting replace an effort in the model name, which agy would refuse', () => {
+    const args = antigravityArgs(task({ model: 'gemini-3.8-flash-medium', effort: 'low' }));
+    expect(args.slice(-4)).toEqual(['--model', 'gemini-3.8-flash', '--effort', 'low']);
+    // Without an effort setting the name is passed as it is.
+    expect(antigravityArgs(task({ model: 'gemini-3.8-flash-medium' })).slice(-2)).toEqual([
+      '--model',
+      'gemini-3.8-flash-medium',
+    ]);
+    expect(
+      antigravityArgs(task({ model: 'claude-opus-4-6-thinking', effort: 'high' })).slice(-4),
+    ).toEqual(['--model', 'claude-opus-4-6-thinking', '--effort', 'high']);
+  });
+
+  it('explains a model that does not take an effort', async () => {
+    const cli = fakeCli(
+      'agy',
+      `echo 'error: invalid model selection (--model "x" --effort "low"): --effort is not supported for model "x"' >&2; exit 1`,
+    );
+    const failure = await new AntigravityAdapter(cli)
+      .run(task({ model: 'x', effort: 'low' }))
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AdapterError);
+    expect((failure as AdapterError).message).toMatch(/Set the effort to Default/);
+    expect((failure as AdapterError).details).toContain('not supported for model');
   });
 
   const hasPty = existsSync('/usr/bin/python3') || existsSync('/usr/bin/script');
@@ -289,6 +342,81 @@ describe('OpenAICompatibleAdapter', () => {
     await expect(new OpenAICompatibleAdapter({ baseUrl }).run(task())).rejects.toThrow(
       /401: bad key/,
     );
+  });
+});
+
+describe('listModels', () => {
+  it('reads the model list from agy', async () => {
+    const output = [
+      'Fetching available models...',
+      'gemini-3.8-flash-high\tGemini 3.8 Flash (High)',
+      'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)',
+      'bare-model',
+      '',
+    ].join('\n');
+    expect(parseAgyModels(output)).toEqual([
+      { id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)' },
+      { id: 'gemini-3.8-flash-low', label: 'Gemini 3.8 Flash (Low)' },
+      { id: 'bare-model' },
+    ]);
+
+    const argsFile = join(dir, 'args.txt');
+    const cli = fakeCli('agy', `echo "$@" > '${argsFile}'; printf 'm-one\\tModel One\\n'`);
+    expect(await listModels('antigravity', { command: cli })).toEqual([
+      { id: 'm-one', label: 'Model One' },
+    ]);
+    expect(readFileSync(argsFile, 'utf8').trim()).toBe('models');
+  });
+
+  it('reports an agy that cannot list models', async () => {
+    const cli = fakeCli('agy', 'echo "not logged in" >&2; exit 1');
+    await expect(listModels('antigravity', { command: cli })).rejects.toThrow(/exited with code 1/);
+    await expect(listModels('antigravity', { command: join(dir, 'missing') })).rejects.toThrow(
+      /Command not found/,
+    );
+  });
+
+  it('asks an OpenAI-compatible API for its models, with the key from the environment', async () => {
+    let authorization: string | undefined;
+    const server = createServer((req, res) => {
+      authorization = req.headers.authorization;
+      if (req.url !== '/v1/models') {
+        res.statusCode = 404;
+        res.end('{}');
+        return;
+      }
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ data: [{ id: 'qwen2.5-coder' }, { id: 'llama3.2' }, {}] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as import('node:net').AddressInfo;
+    try {
+      const baseUrl = `http://127.0.0.1:${port}/v1/`;
+      const env = { TEST_KEY: 'sk-test' };
+      expect(
+        await listModels('openai-compatible', { baseUrl, apiKeyEnv: 'TEST_KEY' }, { env }),
+      ).toEqual([{ id: 'llama3.2' }, { id: 'qwen2.5-coder' }]);
+      expect(authorization).toBe('Bearer sk-test');
+
+      await expect(
+        listModels('openai-compatible', { baseUrl, apiKeyEnv: 'MISSING_KEY' }, { env }),
+      ).rejects.toThrow(/MISSING_KEY is not set/);
+      await expect(
+        listModels('openai-compatible', { baseUrl: `http://127.0.0.1:${port}/nope` }),
+      ).rejects.toThrow(/answered 404/);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it('answers with aliases for Claude Code, which has no listing command', async () => {
+    expect((await listModels('claude-code')).map((model) => model.id)).toEqual([
+      'sonnet',
+      'opus',
+      'haiku',
+      'fable',
+    ]);
+    expect(await listModels('mock')).toEqual([{ id: 'mock' }]);
   });
 });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Agent, Group, Message } from '../protocol.js';
+import { defaultSettings } from '../settings.js';
 import { parseCommand } from './commands.js';
 import { parseMentions } from './mentions.js';
 import { buildPrompt, buildSystemPrompt, visibleHistory, type PromptInput } from './prompt.js';
@@ -15,6 +16,7 @@ function agent(name: string, role: Agent['role'] = 'worker'): Agent {
     role,
     instructions: '',
     options: {},
+    settings: defaultSettings(role),
     createdAt: 0,
     firedAt: null,
   };

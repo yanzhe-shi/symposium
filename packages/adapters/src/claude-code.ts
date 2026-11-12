@@ -43,6 +43,7 @@ export function claudeCodeArgs(task: AgentTask): string[] {
   ];
   if (task.access === 'edit') args.push('--permission-mode', 'acceptEdits');
   if (task.model) args.push('--model', task.model);
+  if (task.effort && task.effort !== 'default') args.push('--effort', task.effort);
   return args;
 }
 

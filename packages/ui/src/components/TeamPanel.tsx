@@ -2,7 +2,7 @@ import type { Agent, AgentActivity, Group } from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { api } from '../api.ts';
 import type { Catalog } from '../App.tsx';
-import { HireForm } from './HireForm.tsx';
+import { AgentForm } from './AgentForm.tsx';
 import { MemoryDialog } from './MemoryDialog.tsx';
 
 interface TeamPanelProps {
@@ -21,8 +21,17 @@ export function agentStatusLabel(working: boolean, queued: number): string {
   return waiting || 'Idle';
 }
 
+/** The settings worth showing on a card: only what differs from the role's usual setup. */
+export function settingsSummary(agent: Agent, roleFiles: string | undefined): string[] {
+  const parts: string[] = [];
+  if (agent.settings.files !== roleFiles) parts.push(`files: ${agent.settings.files}`);
+  if (agent.settings.effort !== 'default') parts.push(`effort: ${agent.settings.effort}`);
+  return parts;
+}
+
 export function TeamPanel({ group, team, activity, queues, catalog }: TeamPanelProps) {
   const [hiring, setHiring] = useState(false);
+  const [editing, setEditing] = useState<Agent>();
   const [memoryOf, setMemoryOf] = useState<Agent>();
   const [error, setError] = useState<string>();
 
@@ -43,8 +52,20 @@ export function TeamPanel({ group, team, activity, queues, catalog }: TeamPanelP
     }
   }
 
-  if (hiring) {
-    return <HireForm group={group} team={team} catalog={catalog} onDone={() => setHiring(false)} />;
+  if (hiring || editing) {
+    return (
+      <AgentForm
+        key={editing?.id ?? 'hire'}
+        group={group}
+        team={team}
+        catalog={catalog}
+        agent={editing}
+        onDone={() => {
+          setHiring(false);
+          setEditing(undefined);
+        }}
+      />
+    );
   }
 
   return (
@@ -72,7 +93,14 @@ export function TeamPanel({ group, team, activity, queues, catalog }: TeamPanelP
                 </span>
               </div>
               <div className="muted small">
-                {agent.provider} · {agent.model}
+                {[
+                  agent.provider,
+                  agent.model,
+                  ...settingsSummary(
+                    agent,
+                    catalog.roles.find((role) => role.kind === agent.role)?.defaultFiles,
+                  ),
+                ].join(' · ')}
               </div>
               {agent.instructions && (
                 <div className="small agent-instructions">{agent.instructions}</div>
@@ -88,6 +116,9 @@ export function TeamPanel({ group, team, activity, queues, catalog }: TeamPanelP
                     Stop
                   </button>
                 )}
+                <button type="button" className="link-button" onClick={() => setEditing(agent)}>
+                  Edit
+                </button>
                 <button type="button" className="link-button" onClick={() => setMemoryOf(agent)}>
                   Memory
                 </button>

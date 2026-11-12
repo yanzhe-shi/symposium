@@ -5,7 +5,7 @@ import type { AppContext } from '../context.js';
 import { appendMemory, memoryForPrompt, readMemory } from '../memory.js';
 import { projectForPrompt, readProjectFile } from '../project-file.js';
 import type { Agent, Group, HireRequest, Message, TeamStatus } from '../protocol.js';
-import { loadRoleText, roleAccess } from '../roles.js';
+import { loadRoleText } from '../roles.js';
 import { getAgent, listAgents } from '../store/agents.js';
 import { logEvent } from '../store/events.js';
 import { getGroup } from '../store/groups.js';
@@ -564,7 +564,8 @@ export class TeamRunner {
     const started = Date.now();
     try {
       const workspace = await this.hooks.prepareWorkspace(group, agent);
-      const access = roleAccess(agent.role);
+      // The engine, not the model, decides what the agent may touch.
+      const { files: access, effort, commands } = agent.settings;
       const promptInput = {
         group,
         agent,
@@ -588,6 +589,8 @@ export class TeamRunner {
         trigger: triggers.map((trigger) => trigger.body).join('\n\n'),
         workingDirectory: workspace.cwd,
         access,
+        effort,
+        commands,
         signal,
         timeoutMs: DEFAULT_TIMEOUT_MS,
       });
@@ -610,6 +613,8 @@ export class TeamRunner {
         detail: {
           provider: agent.provider,
           model: agent.model,
+          access,
+          effort,
           triggerMessageIds: triggers.map((trigger) => trigger.id),
           threadId,
           round,
@@ -657,7 +662,9 @@ export class TeamRunner {
     for (const proposal of proposals) {
       let hire: HireRequest;
       try {
-        hire = validateHire(proposal as HireRequest);
+        // A lead proposes who to hire. What the new agent may touch is for the human to set,
+        // so any settings in the proposal are dropped and the role's defaults apply.
+        hire = validateHire({ ...(proposal as HireRequest), settings: undefined });
       } catch (error) {
         postNotice(
           this.ctx,

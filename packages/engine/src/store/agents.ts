@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../db/database.js';
-import type { Agent, HireRequest, ProviderId, ProviderOptions, RoleKind } from '../protocol.js';
+import type {
+  Agent,
+  AgentSettings,
+  HireRequest,
+  ProviderId,
+  ProviderOptions,
+  RoleKind,
+} from '../protocol.js';
+import { resolveSettings, settingsOverrides } from '../settings.js';
 
 interface AgentRow {
   id: string;
@@ -11,6 +19,7 @@ interface AgentRow {
   role: RoleKind;
   instructions: string;
   options: string;
+  settings: string;
   created_at: number;
   fired_at: number | null;
 }
@@ -25,6 +34,7 @@ function toAgent(row: AgentRow): Agent {
     role: row.role,
     instructions: row.instructions,
     options: JSON.parse(row.options) as ProviderOptions,
+    settings: resolveSettings(row.role, JSON.parse(row.settings) as Partial<AgentSettings>),
     createdAt: row.created_at,
     firedAt: row.fired_at,
   };
@@ -65,22 +75,42 @@ export function hireAgent(
   now: number = Date.now(),
 ): Agent {
   const previous = findAgentByName(db, groupId, hire.name);
-  const options = JSON.stringify(hire.options ?? {});
-  const instructions = hire.instructions ?? '';
   if (previous) {
     if (previous.firedAt === null) throw new Error(`${previous.name} is already on the team`);
-    db.prepare(
-      `UPDATE agents SET name = ?, provider = ?, model = ?, role = ?, instructions = ?, options = ?,
-       fired_at = NULL WHERE id = ?`,
-    ).run(hire.name, hire.provider, hire.model, hire.role, instructions, options, previous.id);
+    writeAgent(db, previous.id, hire);
+    db.prepare('UPDATE agents SET fired_at = NULL WHERE id = ?').run(previous.id);
     return getAgent(db, previous.id)!;
   }
   const id = randomUUID();
   db.prepare(
-    `INSERT INTO agents (id, group_id, name, provider, model, role, instructions, options, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, groupId, hire.name, hire.provider, hire.model, hire.role, instructions, options, now);
+    `INSERT INTO agents (id, group_id, name, provider, model, role, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, groupId, hire.name, hire.provider, hire.model, hire.role, now);
+  writeAgent(db, id, hire);
   return getAgent(db, id)!;
+}
+
+/** Replaces everything about an agent that a hire describes. */
+function writeAgent(db: Db, id: string, hire: HireRequest): void {
+  db.prepare(
+    `UPDATE agents SET name = ?, provider = ?, model = ?, role = ?, instructions = ?, options = ?,
+     settings = ? WHERE id = ?`,
+  ).run(
+    hire.name,
+    hire.provider,
+    hire.model,
+    hire.role,
+    hire.instructions ?? '',
+    JSON.stringify(hire.options ?? {}),
+    JSON.stringify(settingsOverrides(hire.role, hire.settings ?? {})),
+    id,
+  );
+}
+
+/** Changes an agent in place. `hire` is the agent's complete new description. */
+export function updateAgent(db: Db, id: string, hire: HireRequest): Agent | undefined {
+  writeAgent(db, id, hire);
+  return getAgent(db, id);
 }
 
 export function fireAgent(db: Db, id: string, now: number = Date.now()): Agent | undefined {

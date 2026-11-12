@@ -75,6 +75,12 @@ export const migrations: readonly string[] = [
   ALTER TABLE groups ADD COLUMN lead_asks_first INTEGER NOT NULL DEFAULT 1;
   UPDATE groups SET max_rounds = 6 WHERE max_rounds = 3;
   `,
+
+  // 5: per-agent settings (milestone 9): file access, command mode, allow-list and effort.
+  // Only the values that differ from the role's defaults are stored.
+  `
+  ALTER TABLE agents ADD COLUMN settings TEXT NOT NULL DEFAULT '{}';
+  `,
 ];
 
 export function getSchemaVersion(db: Database.Database): number {

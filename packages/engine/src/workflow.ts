@@ -90,8 +90,9 @@ function oneAtATime<T>(groupId: string, step: () => Promise<T>): Promise<T> {
 export function createRunnerHooks(ctx: AppContext): RunnerHooks {
   return {
     async prepareWorkspace(group, agent) {
-      // Only workers edit, and only in their own worktree. Everyone else reads the project folder.
-      if (agent.role !== 'worker' || !group.baseBranch) return { cwd: group.folderPath! };
+      // Whoever may edit does so in their own worktree, whatever their role. Everyone else
+      // reads the project folder.
+      if (agent.settings.files !== 'edit' || !group.baseBranch) return { cwd: group.folderPath! };
       const worktree = await oneAtATime(group.id, () => ensureWorktree(ctx.dataDir, group, agent));
       if (worktree.warning) postNotice(ctx, group.id, worktree.warning, 'warning');
       return { cwd: worktree.path, branch: worktree.branch };

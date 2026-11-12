@@ -1,5 +1,5 @@
 import type { Agent, Message } from '@symposium/engine/protocol';
-import { agentStatusLabel } from './components/TeamPanel.tsx';
+import { agentStatusLabel, settingsSummary } from './components/TeamPanel.tsx';
 import { describe, expect, it } from 'vitest';
 import {
   activeAgents,
@@ -35,6 +35,7 @@ function agent(id: string, firedAt: number | null = null): Agent {
     role: 'worker',
     instructions: '',
     options: {},
+    settings: { files: 'edit', commands: 'off', allowlist: [], effort: 'default' },
     createdAt: 0,
     firedAt,
   };
@@ -125,6 +126,12 @@ describe('groupReducer', () => {
     expect(state.running).toBe(true);
     expect(workingAgents(state).map((a) => a.id)).toEqual(['b']);
     expect(queuedFor(state)).toEqual(new Map([[4, ['b']]]));
+  });
+
+  it('shows on a card only the settings that differ from the usual', () => {
+    expect(settingsSummary(agent('a'), 'edit')).toEqual([]);
+    const lead = { ...agent('l'), settings: { ...agent('l').settings, effort: 'high' as const } };
+    expect(settingsSummary(lead, 'read')).toEqual(['files: edit', 'effort: high']);
   });
 
   it('labels an agent card by what the agent is doing', () => {

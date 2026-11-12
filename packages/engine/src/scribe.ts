@@ -69,6 +69,7 @@ export async function updateProjectFile(
       trigger: 'Update project.md',
       workingDirectory: group.folderPath,
       access: 'none',
+      effort: scribe.settings.effort,
       signal,
       timeoutMs: DEFAULT_TIMEOUT_MS,
     });

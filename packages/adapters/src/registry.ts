@@ -10,9 +10,10 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     id: 'claude-code',
     label: 'Claude Code (CLI)',
     canEditFiles: true,
-    modelSuggestions: ['sonnet', 'opus', 'haiku'],
+    modelSuggestions: ['sonnet', 'opus', 'haiku', 'fable'],
     smallModel: 'haiku',
-    description: 'Runs `claude -p` with your own Claude Code login.',
+    description:
+      'Runs `claude -p` with your own Claude Code login. Use an alias or a full model name.',
   },
   {
     id: 'antigravity',
@@ -20,8 +21,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     canEditFiles: true,
     modelSuggestions: ['gemini-3.8-flash-medium', 'gemini-3.8-flash-low', 'claude-sonnet-4-6'],
     smallModel: 'gemini-3.8-flash-low',
-    description:
-      'Runs `agy -p` with your own Antigravity login. Run `agy models` for the full list.',
+    description: 'Runs `agy -p` with your own Antigravity login.',
   },
   {
     id: 'openai-compatible',

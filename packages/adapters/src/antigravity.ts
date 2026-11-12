@@ -20,11 +20,19 @@ interface AgyResult {
   response?: string;
 }
 
+// Antigravity's model names can end in an effort, like `gemini-3.8-flash-low`.
+const EFFORT_SUFFIX = /-(low|medium|high|xhigh|max)$/;
+
 /** `agy` has no system prompt flag, so the system prompt goes at the top of the prompt. */
 export function antigravityArgs(task: AgentTask): string[] {
   const prompt = `${task.systemPrompt}\n\n---\n\n${task.prompt}`;
   const args = ['-p', prompt, '--output-format', 'json', ...MODE_ARGS[task.access]];
-  if (task.model) args.push('--model', task.model);
+  const effort = task.effort && task.effort !== 'default' ? task.effort : undefined;
+  // `agy` refuses `--effort` next to a model name that already carries one. The agent's effort
+  // setting is the more specific choice, so it replaces the one in the name.
+  const model = effort ? task.model.replace(EFFORT_SUFFIX, '') : task.model;
+  if (model) args.push('--model', model);
+  if (effort) args.push('--effort', effort);
   return args;
 }
 
@@ -77,10 +85,14 @@ export class AntigravityAdapter implements AgentAdapter {
       result = await runUnderPty(options);
     }
     if (result.exitCode !== 0) {
-      throw new AdapterError(
-        `agy exited with code ${result.exitCode}`,
-        (result.stderr || result.stdout).slice(0, 2000),
-      );
+      const details = (result.stderr || result.stdout).slice(0, 2000);
+      if (details.includes('invalid model selection')) {
+        throw new AdapterError(
+          'Antigravity does not accept this model with this effort. Set the effort to Default or choose another model',
+          details,
+        );
+      }
+      throw new AdapterError(`agy exited with code ${result.exitCode}`, details);
     }
     const { text, warning } = parseAntigravityOutput(result.stdout);
     if (text === '') throw new AdapterError('agy returned an empty reply');

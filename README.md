@@ -14,6 +14,7 @@ Each group chat is one project folder. You add agents from any provider (Claude 
 - **Agents work in parallel.** Every agent has an inbox and works through it one turn at a time, while its teammates do the same. You set how many may work at once (3 by default).
 - **Talk at any time.** A new message never stops anyone. A busy agent gets it in its next turn; the chat shows it as "queued for Ada" until then.
 - **Round limits.** Each message you send starts a thread. After 6 hand-offs between agents in a thread (you can change this), that thread waits for you. Other threads carry on.
+- **Any model, any setup.** Pick each agent's model from the provider's own list or type any name, set its effort and file access, and change them later without firing anyone.
 - **Git isolation.** Every worker edits in its own branch and worktree. Its changes show up in the chat as a diff. Nothing reaches your project until you click **Merge**.
 - **Memory that stays with the agent.** Each agent keeps its own memory file, and every agent reads `project.md` before working. Both belong to Symposium, not to the provider.
 - **You stay in charge.** Work stops only when you say so: **Stop all**, **Stop** on one agent, `/stop`, or `/now @Ada …` to interrupt Ada with something urgent. Approve or decline the hires the lead proposes.
@@ -50,7 +51,7 @@ The code owns the rules, the lead owns the decisions, and you own the approvals.
 
 **Context.** The lead sees the whole recent chat. Other agents see `project.md`, their own memory, and only the messages that mention them, plus diffs waiting for review. This keeps cost down as the team grows.
 
-**Roles and access.**
+**Roles and access.** Each role starts with the access below. You can change an agent's file access when you hire it or later with **Edit**; anyone given edit access gets their own worktree, and their changes still wait for your merge.
 
 | Role     | Works in                                           | Can edit files                                                |
 | -------- | -------------------------------------------------- | ------------------------------------------------------------- |

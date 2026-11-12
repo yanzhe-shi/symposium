@@ -84,6 +84,7 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **At once** (header): how many agents may work at the same time. Default 3.
 - **Lead asks before starting work** (header): on by default. Switch it off and the lead assigns tasks straight away instead of waiting for you to approve a plan.
 - **project.md updates** happen once the whole team has been idle for 30 seconds, not after every reply.
+- **Edit** an agent from its card to change its model, role, effort or file access without firing it. The change applies from its next turn. Giving a lead or reviewer **Edit** file access gives it its own branch and worktree, like a worker.
 - **Fire** an agent from the Team panel. Its branch, worktree and memory are kept. Hiring the same name again brings it back with its memory.
 - **project.md tab**: read or edit the shared project description.
 - **Memory**: read or edit what each agent has chosen to remember.

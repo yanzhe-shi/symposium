@@ -30,6 +30,37 @@ export interface ProviderOptions {
   apiKeyEnv?: string;
 }
 
+// These three mirror the adapters package too.
+export type FileAccess = 'none' | 'read' | 'edit';
+export type CommandMode = 'off' | 'ask' | 'allowlist' | 'auto';
+export type EffortLevel = 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+/**
+ * What one agent may do and how hard it thinks. Defaults come from the role; the human can
+ * change them for each agent. The engine enforces them, never the model.
+ */
+export interface AgentSettings {
+  /** `edit` gives the agent its own branch and worktree. `read` shows it the project folder. */
+  files: FileAccess;
+  /** Terminal commands. Not in use until the approval flow exists (milestone 11). */
+  commands: CommandMode;
+  /** Command patterns that run without asking when `commands` is `allowlist`. */
+  allowlist: string[];
+  effort: EffortLevel;
+}
+
+export interface ModelInfo {
+  id: string;
+  label?: string;
+}
+
+/** Answer of `GET /api/providers/:id/models`. */
+export interface ModelList {
+  models: ModelInfo[];
+  /** Set when the provider could not be asked; `models` then holds the built-in suggestions. */
+  error?: string;
+}
+
 export interface ProviderInfo {
   id: ProviderId;
   label: string;
@@ -43,6 +74,8 @@ export interface RoleInfo {
   kind: RoleKind;
   title: string;
   summary: string;
+  /** The file access agents in this role get unless the human chooses otherwise. */
+  defaultFiles: FileAccess;
 }
 
 export interface Agent {
@@ -55,6 +88,8 @@ export interface Agent {
   /** Extra job description on top of the built-in role, e.g. "frontend specialist". */
   instructions: string;
   options: ProviderOptions;
+  /** The settings in force: the role's defaults with the human's choices on top. */
+  settings: AgentSettings;
   createdAt: number;
   firedAt: number | null;
 }
@@ -66,7 +101,12 @@ export interface HireRequest {
   role: RoleKind;
   instructions?: string;
   options?: ProviderOptions;
+  /** Only the settings that should differ from the role's defaults need to be given. */
+  settings?: Partial<AgentSettings>;
 }
+
+/** Changes to an agent on the team. The name stays: branches and mentions depend on it. */
+export type UpdateAgentRequest = Partial<Omit<HireRequest, 'name'>>;
 
 export type DiffStatus = 'pending' | 'merged' | 'discarded' | 'superseded';
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
