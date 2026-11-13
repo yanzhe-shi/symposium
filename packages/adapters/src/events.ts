@@ -1,5 +1,5 @@
 import { isAbsolute, relative, sep } from 'node:path';
-import type { AgentEvent, AgentEventKind } from './types.js';
+import type { AgentEvent } from './types.js';
 
 const MAX_TARGET = 300;
 const MAX_SUMMARY_TARGET = 80;
@@ -18,7 +18,10 @@ export function displayPath(path: string, cwd: string): string {
   return inside.startsWith('..') || isAbsolute(inside) ? path : inside.split(sep).join('/');
 }
 
-const VERBS: Record<Exclude<AgentEventKind, 'text' | 'denied'>, string> = {
+/** The kinds of event that describe one tool call. */
+export type ToolKind = 'read' | 'edit' | 'search' | 'command' | 'tool';
+
+const VERBS: Record<ToolKind, string> = {
   read: 'read',
   edit: 'edited',
   search: 'searched for',
@@ -26,7 +29,7 @@ const VERBS: Record<Exclude<AgentEventKind, 'text' | 'denied'>, string> = {
   tool: 'used',
 };
 
-const UNTARGETED: Record<Exclude<AgentEventKind, 'text' | 'denied' | 'tool'>, string> = {
+const UNTARGETED: Record<Exclude<ToolKind, 'tool'>, string> = {
   read: 'read a file',
   edit: 'edited a file',
   search: 'searched the files',
@@ -44,11 +47,7 @@ function abridge(target: string): string {
  * One tool call, described for the activity timeline: "read src/cart.ts". The summary shortens
  * a very long target; `target` keeps it.
  */
-export function toolEvent(
-  kind: Exclude<AgentEventKind, 'text' | 'denied'>,
-  tool: string,
-  target?: string,
-): AgentEvent {
+export function toolEvent(kind: ToolKind, tool: string, target?: string): AgentEvent {
   const full = target === undefined ? undefined : oneLine(target, MAX_TARGET);
   const shown = full && abridge(full);
   const summary =
@@ -68,6 +67,41 @@ export function textEvent(text: string): AgentEvent | undefined {
 
 export function deniedEvent(tool: string, reason: string): AgentEvent {
   return { kind: 'denied', tool, summary: oneLine(`was refused ${tool}: ${reason}`, MAX_TEXT) };
+}
+
+/** A command that was not allowed to run. */
+export function deniedCommandEvent(tool: string, command: string, reason: string): AgentEvent {
+  const shown = oneLine(command, MAX_TARGET);
+  return {
+    kind: 'denied',
+    tool,
+    target: shown,
+    summary: oneLine(`was not allowed to run ${abridge(shown)}: ${reason}`, MAX_TEXT),
+  };
+}
+
+const MAX_OUTPUT = 2000;
+
+/** How a command ended. Keeps the end of its output, where errors and totals are. */
+export function outputEvent(
+  tool: string,
+  command: string,
+  result: { output: string; exitCode?: number; failed?: boolean },
+): AgentEvent {
+  const shown = abridge(oneLine(command, MAX_TARGET));
+  const failed = result.failed ?? (result.exitCode !== undefined && result.exitCode !== 0);
+  const code = result.exitCode === undefined ? '' : ` (exit code ${result.exitCode})`;
+  const output = result.output.trim();
+  return {
+    kind: 'output',
+    tool,
+    target: oneLine(command, MAX_TARGET),
+    summary: failed ? `${shown} failed${code}` : `${shown} finished`,
+    ...(output
+      ? { output: output.length > MAX_OUTPUT ? `…${output.slice(-MAX_OUTPUT)}` : output }
+      : {}),
+    ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+  };
 }
 
 /** Parses one line of a JSON-lines stream. Lines that are not a JSON object give undefined. */

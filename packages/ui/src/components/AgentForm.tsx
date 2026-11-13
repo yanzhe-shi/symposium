@@ -1,5 +1,6 @@
 import type {
   Agent,
+  CommandMode,
   EffortLevel,
   FileAccess,
   Group,
@@ -28,6 +29,21 @@ const FILE_ACCESS_LABELS: Record<FileAccess, string> = {
   edit: 'Edit: own worktree',
 };
 const FILE_ACCESS: FileAccess[] = ['none', 'read', 'edit'];
+const COMMAND_MODES: CommandMode[] = ['off', 'ask', 'allowlist', 'auto'];
+const COMMAND_MODE_LABELS: Record<CommandMode, string> = {
+  off: 'Off: no terminal',
+  ask: 'Ask every time',
+  allowlist: 'Allow-list: ask for the rest',
+  auto: 'Full auto',
+};
+const COMMAND_MODE_HELP: Record<CommandMode, string> = {
+  off: 'This agent cannot run terminal commands.',
+  ask: 'Every command waits in the chat for you to allow or deny it.',
+  allowlist: 'Commands on the list below run at once. You are asked about any other.',
+  auto: 'Commands run without asking, in the agent’s own worktree.',
+};
+const ALWAYS_ASKS =
+  'Whatever you choose, these always ask: git push, deleting a branch, sudo, and anything that reaches outside the agent’s folder.';
 const EFFORT_LEVELS: EffortLevel[] = ['default', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 /** A team starts with a lead; after that most hires are workers. */
@@ -73,6 +89,11 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
   // Undefined means "whatever the role gives", so the choice follows the role until it is made.
   const [chosenFiles, setChosenFiles] = useState<FileAccess | undefined>(agent?.settings.files);
   const [effort, setEffort] = useState<EffortLevel>(agent?.settings.effort ?? 'default');
+  const [chosenCommands, setChosenCommands] = useState<CommandMode | undefined>(
+    agent?.settings.commands,
+  );
+  // One pattern per line.
+  const [allowlist, setAllowlist] = useState((agent?.settings.allowlist ?? []).join('\n'));
   // The options the model list was last asked with. Updated when a field loses focus, so
   // the provider is not asked on every keystroke.
   const [lookupOptions, setLookupOptions] = useState<ProviderOptions>(() =>
@@ -86,6 +107,7 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
   const roleInfo = catalog.roles.find((r) => r.kind === role);
   const roleFiles = roleInfo?.defaultFiles ?? 'read';
   const files = role === 'scribe' ? 'none' : (chosenFiles ?? roleFiles);
+  const roleCommands = roleInfo?.defaultCommands ?? 'off';
   const takenSeats = new Set(
     team
       .filter((member) => member.id !== agent?.id)
@@ -93,6 +115,12 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
       .map((member) => member.role),
   );
   const isCli = provider.id === 'claude-code' || provider.id === 'antigravity';
+  const hasTerminal = provider.canRunCommands && role !== 'scribe';
+  const commands = hasTerminal ? (chosenCommands ?? roleCommands) : 'off';
+  const patterns = allowlist
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
 
   const providerOptions = (): ProviderOptions =>
     optionsFor(provider.id, { command, baseUrl, apiKeyEnv });
@@ -129,8 +157,9 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
 
   function changeRole(next: RoleKind): void {
     setRole(next);
-    // File access goes back to what the new role gives.
+    // File access and the terminal go back to what the new role gives.
     setChosenFiles(undefined);
+    setChosenCommands(undefined);
     // Moving to or from the scribe changes which model makes sense.
     if (next === 'scribe' || role === 'scribe') setModel(defaultModel(provider, next));
   }
@@ -145,7 +174,12 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
       model: model.trim(),
       instructions: instructions.trim(),
       options: providerOptions(),
-      settings: { files, effort: isCli ? effort : ('default' as const) },
+      settings: {
+        files,
+        effort: isCli ? effort : ('default' as const),
+        // A provider without a terminal keeps whatever was set, for the day it is swapped.
+        ...(hasTerminal ? { commands, allowlist: patterns } : {}),
+      },
     };
     try {
       if (agent) await api.editAgent(group.id, agent.id, details);
@@ -253,6 +287,46 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
         <p className="form-warning small">
           This provider cannot edit files, so this agent can only advise.
         </p>
+      )}
+      {hasTerminal && (
+        <>
+          <label>
+            Terminal commands
+            <select
+              value={commands}
+              onChange={(event) => setChosenCommands(event.target.value as CommandMode)}
+            >
+              {COMMAND_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {COMMAND_MODE_LABELS[mode]}
+                  {mode === roleCommands ? ' (usual)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="muted small">
+            {files === 'edit' || commands === 'off'
+              ? COMMAND_MODE_HELP[commands]
+              : 'Without a worktree of its own this agent works in the project folder, so it can run only the commands on the list below.'}
+            {commands !== 'off' && ` ${ALWAYS_ASKS}`}
+          </p>
+          {commands !== 'off' &&
+            (commands !== 'auto' || files !== 'edit' || patterns.length > 0) && (
+              <label>
+                Allow-list (one command per line, * matches anything)
+                <textarea
+                  value={allowlist}
+                  onChange={(event) => setAllowlist(event.target.value)}
+                  placeholder={'pnpm test\nnpm run *\ngit status'}
+                  rows={4}
+                  spellCheck={false}
+                />
+              </label>
+            )}
+          {commands === 'ask' && files === 'edit' && patterns.length > 0 && (
+            <p className="muted small">The list is kept but not used while every command asks.</p>
+          )}
+        </>
       )}
       {isCli && (
         <label>

@@ -16,6 +16,17 @@ export interface ProcessOptions {
   timeoutMs?: number;
   /** Called with each complete line of stdout as it arrives, for CLIs that stream progress. */
   onStdoutLine?: (line: string) => void;
+  /**
+   * For CLIs that are talked to while they run. Called once the process has started. Stdin
+   * then stays open after `input` until the caller ends it.
+   */
+  onStart?: (stdin: ProcessStdin) => void;
+}
+
+/** The stdin of a running process. Writes after the process has gone are dropped. */
+export interface ProcessStdin {
+  write(text: string): void;
+  end(): void;
 }
 
 export interface ProcessResult {
@@ -29,7 +40,7 @@ const KILL_GRACE_MS = 3000;
 
 /** Runs a command without a shell and collects its output. Rejects on abort, timeout or spawn failure. */
 export function runProcess(options: ProcessOptions): Promise<ProcessResult> {
-  const { command, args, cwd, input, env, signal, timeoutMs, onStdoutLine } = options;
+  const { command, args, cwd, input, env, signal, timeoutMs, onStdoutLine, onStart } = options;
   if (signal?.aborted) return Promise.reject(new CancelledError());
 
   return new Promise((resolve, reject) => {
@@ -120,7 +131,19 @@ export function runProcess(options: ProcessOptions): Promise<ProcessResult> {
     child.stdin.on('error', () => {
       // The child may exit before reading stdin. Its exit code reports the real problem.
     });
-    child.stdin.end(input ?? '');
+    if (onStart) {
+      if (input) child.stdin.write(input);
+      onStart({
+        write: (text) => {
+          if (child.stdin.writable) child.stdin.write(text);
+        },
+        end: () => {
+          if (child.stdin.writable) child.stdin.end();
+        },
+      });
+    } else {
+      child.stdin.end(input ?? '');
+    }
   });
 }
 

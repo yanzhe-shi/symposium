@@ -1,5 +1,6 @@
 import type { Agent, Message } from '@symposium/engine/protocol';
 import { useEffect, useRef } from 'react';
+import { CommandCard } from './CommandCard.tsx';
 import { DiffCard } from './DiffCard.tsx';
 import { HireProposalCard } from './HireProposalCard.tsx';
 import { RichText } from './RichText.tsx';
@@ -76,6 +77,9 @@ function MessageItem({
 
   if (message.meta?.type === 'diff') {
     return <DiffCard groupId={groupId} message={message} meta={message.meta} agents={agents} />;
+  }
+  if (message.meta?.type === 'command') {
+    return <CommandCard groupId={groupId} message={message} meta={message.meta} agents={agents} />;
   }
   if (message.meta?.type === 'hire-proposal') {
     return <HireProposalCard groupId={groupId} message={message} meta={message.meta} />;

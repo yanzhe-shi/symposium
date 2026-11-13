@@ -2,9 +2,9 @@
  * What an agent may touch while it works:
  * - `edit`: read and edit files inside `workingDirectory` (a worker's own git worktree)
  * - `read`: read files in `workingDirectory` but change nothing (lead, reviewer)
- * - `none`: no tools at all, text in and text out (scribe)
+ * - `none`: no file tools at all (scribe)
  *
- * No access level allows running shell commands. That needs human approval, which v1 does not offer.
+ * File access says nothing about terminal commands. Those are a separate setting: `CommandMode`.
  */
 export type AgentAccess = 'edit' | 'read' | 'none';
 
@@ -15,8 +15,9 @@ export type AgentAccess = 'edit' | 'read' | 'none';
  * - `allowlist`: commands matching the agent's allow-list run, the rest wait for the human
  * - `auto`: commands run without asking, inside the agent's own worktree
  *
- * The engine decides each command. Adapters only pass requests on. Until the approval flow
- * exists (milestone 11) every adapter treats all modes as `off`.
+ * The engine decides each command. An adapter only passes each request on through
+ * `AgentTask.onCommand` and does what the answer says. A provider that cannot ask before it
+ * runs a command treats every mode as `off`.
  */
 export type CommandMode = 'off' | 'ask' | 'allowlist' | 'auto';
 
@@ -38,9 +39,11 @@ export const EFFORT_LEVELS: readonly EffortLevel[] = [
  * - `read`, `edit`, `search`, `command`: a tool call of that sort. Edits are reported once
  *   they have happened; the others when they start
  * - `tool`: any other tool
- * - `denied`: a tool call the provider's own sandbox refused
+ * - `denied`: a tool call that was refused, by the provider's own sandbox or by Symposium
+ * - `output`: how a command ended, with what it printed
  */
-export type AgentEventKind = 'text' | 'read' | 'edit' | 'search' | 'command' | 'tool' | 'denied';
+export type AgentEventKind =
+  'text' | 'read' | 'edit' | 'search' | 'command' | 'tool' | 'denied' | 'output';
 
 export interface AgentEvent {
   kind: AgentEventKind;
@@ -50,6 +53,23 @@ export interface AgentEvent {
   target?: string;
   /** One line for the activity timeline, such as "read src/cart.ts". */
   summary: string;
+  /** For `output`: the end of what the command printed. */
+  output?: string;
+  /** For `output`: the command's exit code, when the provider reports one. */
+  exitCode?: number;
+}
+
+/** A terminal command an agent wants to run in its working directory. */
+export interface CommandRequest {
+  command: string;
+  /** What the agent says the command is for, when the provider passes that on. */
+  description?: string;
+}
+
+export interface CommandDecision {
+  allow: boolean;
+  /** Told to the agent when the command is refused. */
+  reason?: string;
 }
 
 export interface AgentTask {
@@ -67,6 +87,12 @@ export interface AgentTask {
   effort?: EffortLevel;
   /** Terminal command mode. See `CommandMode`. */
   commands?: CommandMode;
+  /**
+   * Asked before every terminal command, when `commands` is not `off`. The command runs only
+   * if the answer allows it. The answer may take minutes: a human may be deciding. Without
+   * this, no adapter offers commands at all.
+   */
+  onCommand?: (request: CommandRequest) => Promise<CommandDecision>;
   /** Called as the agent works, for providers that report progress. Must not throw. */
   onEvent?: (event: AgentEvent) => void;
   signal?: AbortSignal;
@@ -105,6 +131,8 @@ export interface ProviderInfo {
   label: string;
   /** Whether agents on this provider can edit files in their worktree. */
   canEditFiles: boolean;
+  /** Whether the provider can ask before it runs a terminal command. Without that, no terminal. */
+  canRunCommands: boolean;
   modelSuggestions: string[];
   /** A small, cheap model for the scribe. */
   smallModel: string;

@@ -977,3 +977,101 @@ label select {
   margin: 0;
   padding-left: 1.2rem;
 }
+
+/* Command approvals */
+
+.command-text {
+  margin: 0.4rem 0;
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.command-pending {
+  border-color: var(--warning);
+}
+
+.command-denied,
+.command-expired,
+.command-cancelled {
+  opacity: 0.7;
+}
+
+.pill-allowed {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.pill-denied,
+.pill-expired,
+.pill-cancelled {
+  color: var(--muted);
+}
+
+.timeline-command {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.timeline-entry details {
+  min-width: 0;
+}
+
+.timeline-entry summary {
+  cursor: pointer;
+}
+
+.timeline-output-text {
+  max-height: 180px;
+  margin: 0.2rem 0;
+  padding: 0.3rem 0.5rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+
+/* Your own terminal in the Code tab */
+
+.terminal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.terminal-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.terminal-form input {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.terminal-output {
+  flex: 1;
+  min-height: 120px;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}

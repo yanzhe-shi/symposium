@@ -4,11 +4,22 @@ import type {
   AgentProgress,
   Message,
   TeamStatus,
+  TerminalRun,
   WorktreeChanges,
 } from '@symposium/engine/protocol';
 
 /** How many timeline entries are kept per agent. */
 export const MAX_PROGRESS = 100;
+/** How much of a command's output the Run box keeps: the end of it. */
+export const MAX_TERMINAL_CHARS = 200_000;
+
+/** The command you last ran from the Code tab, and what it has printed so far. */
+export interface TerminalState extends TerminalRun {
+  output: string;
+  running: boolean;
+  /** Null while running, and when the command was stopped or could not start. */
+  exitCode: number | null;
+}
 
 export interface GroupState {
   /** Messages sorted by id, with no duplicates. */
@@ -25,6 +36,8 @@ export interface GroupState {
   liveChanges: Record<string, WorktreeChanges>;
   /** Increases whenever files may have changed on disk, so the Code tab can reload. */
   filesVersion: number;
+  /** The newest command you ran yourself. */
+  terminal?: TerminalState;
   /** Increases whenever project.md changes, so views can reload it. */
   projectVersion: number;
 }
@@ -41,6 +54,9 @@ export type GroupAction =
   | { type: 'progress'; progress: AgentProgress[] }
   | { type: 'changes'; agentId: string; changes: WorktreeChanges }
   | { type: 'filesChanged' }
+  | { type: 'terminalStarted'; run: TerminalRun }
+  | { type: 'terminalOutput'; runId: string; text: string }
+  | { type: 'terminalExit'; runId: string; exitCode: number | null }
   | { type: 'projectUpdated' };
 
 export const initialGroupState: GroupState = {
@@ -96,6 +112,16 @@ export function mergeProgress(
   return changed ? merged : current;
 }
 
+/**
+ * The run an event belongs to, if the Run box should show it. An event for a run not heard of
+ * yet starts one, unless another command is still running: only the newest run is shown.
+ */
+function terminalFor(state: GroupState, runId: string): TerminalState | undefined {
+  if (state.terminal?.runId === runId) return state.terminal;
+  if (state.terminal?.running) return undefined;
+  return { runId, where: '', folder: '', command: '', output: '', running: true, exitCode: null };
+}
+
 export function groupReducer(state: GroupState, action: GroupAction): GroupState {
   switch (action.type) {
     case 'reset':
@@ -141,6 +167,30 @@ export function groupReducer(state: GroupState, action: GroupAction): GroupState
       };
     case 'filesChanged':
       return { ...state, filesVersion: state.filesVersion + 1 };
+    case 'terminalStarted': {
+      // Output can arrive over the WebSocket before the answer that says the run has started.
+      const early = state.terminal?.runId === action.run.runId ? state.terminal : undefined;
+      return {
+        ...state,
+        terminal: { output: '', running: true, exitCode: null, ...early, ...action.run },
+      };
+    }
+    case 'terminalOutput': {
+      const run = terminalFor(state, action.runId);
+      if (!run) return state;
+      const output = (run.output + action.text).slice(-MAX_TERMINAL_CHARS);
+      return { ...state, terminal: { ...run, output } };
+    }
+    case 'terminalExit': {
+      const run = terminalFor(state, action.runId);
+      if (!run) return state;
+      return {
+        ...state,
+        terminal: { ...run, running: false, exitCode: action.exitCode },
+        // The command may have changed files.
+        filesVersion: state.filesVersion + 1,
+      };
+    }
     case 'projectUpdated':
       return { ...state, projectVersion: state.projectVersion + 1 };
   }
@@ -185,4 +235,16 @@ export function activityLine(progress: AgentProgress[] | undefined, count = 3): 
 /** The agents whose work can be browsed: those who edit, each in a worktree of their own. */
 export function editingAgents(state: GroupState): Agent[] {
   return activeAgents(state).filter((agent) => agent.settings.files === 'edit');
+}
+
+/**
+ * A chat message that shows the team a command you ran and the end of what it printed.
+ * Posting it is the only way agents see your terminal.
+ */
+export function terminalReport(run: TerminalState, maxOutput = 6000): string {
+  const how =
+    run.exitCode === null ? 'stopped' : run.exitCode === 0 ? 'ok' : `exit code ${run.exitCode}`;
+  const output = run.output.trim().replaceAll('```', "'''");
+  const shown = output.length > maxOutput ? `…${output.slice(-maxOutput)}` : output;
+  return `I ran \`${run.command}\` in ${run.folder} (${how}):\n\n\`\`\`\n${shown || '(no output)'}\n\`\`\``;
 }

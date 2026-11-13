@@ -27,6 +27,7 @@ export async function createTestApp(
     createAdapter?: AdapterFactory;
     scribeDelayMs?: number;
     liveChangesIntervalMs?: number;
+    approvalTimeoutMs?: number;
   } = {},
 ): Promise<TestApp> {
   const root = mkdtempSync(join(tmpdir(), 'symposium-test-'));
@@ -49,6 +50,7 @@ export async function createTestApp(
     // Tests don't wait for the group to stay quiet before the scribe runs, unless they ask to.
     scribeDelayMs: options.scribeDelayMs ?? 0,
     liveChangesIntervalMs: options.liveChangesIntervalMs,
+    approvalTimeoutMs: options.approvalTimeoutMs,
   });
   return {
     app,

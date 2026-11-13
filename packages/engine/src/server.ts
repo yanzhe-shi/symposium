@@ -5,6 +5,8 @@ import Fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
 } from 'fastify';
+import { CommandApprovals } from './commands/approvals.js';
+import { HumanTerminal } from './commands/terminal.js';
 import { BUILT_IN_ROLES_DIR } from './config.js';
 import type { AdapterFactory, AppContext } from './context.js';
 import type { Db } from './db/database.js';
@@ -31,12 +33,14 @@ export interface ServerDeps {
   scribeDelayMs?: number;
   /** The shortest time between two pushes of one agent's live diff. */
   liveChangesIntervalMs?: number;
+  /** How long a command waits for the human before it is refused. */
+  approvalTimeoutMs?: number;
   logger?: FastifyServerOptions['logger'];
 }
 
 declare module 'fastify' {
   interface FastifyInstance {
-    symposium: { ctx: AppContext; runner: TeamRunner };
+    symposium: { ctx: AppContext; runner: TeamRunner; approvals: CommandApprovals };
   }
 }
 
@@ -57,12 +61,16 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     createAdapter: deps.createAdapter ?? defaultAdapterFactory,
   };
 
-  const runner = new TeamRunner(ctx, createRunnerHooks(ctx), {
+  const approvals = new CommandApprovals(ctx, deps.approvalTimeoutMs);
+  const runner = new TeamRunner(ctx, createRunnerHooks(ctx, approvals), {
     scribeDelayMs: deps.scribeDelayMs,
     liveChangesIntervalMs: deps.liveChangesIntervalMs,
   });
-  app.decorate('symposium', { ctx, runner });
-  app.addHook('onClose', async () => runner.shutdown());
+  const terminal = new HumanTerminal(ctx);
+  app.decorate('symposium', { ctx, runner, approvals });
+  app.addHook('onClose', async () => {
+    await Promise.all([terminal.shutdown(), runner.shutdown()]);
+  });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode ?? 500;
@@ -80,7 +88,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerGroupRoutes(app, ctx, runner);
   registerAgentRoutes(app, ctx, runner);
   registerMessageRoutes(app, ctx, runner);
-  registerRunRoutes(app, ctx, runner);
+  registerRunRoutes(app, ctx, runner, approvals, terminal);
   registerDocumentRoutes(app, ctx);
   registerFileRoutes(app, ctx);
   registerChatSocket(app, ctx);

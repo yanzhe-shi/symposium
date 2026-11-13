@@ -1,9 +1,13 @@
+import { isAbsolute } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   AdapterError,
   CancelledError,
   DEFAULT_TIMEOUT_MS,
+  PROVIDERS,
   type AgentEvent,
+  type CommandDecision,
+  type CommandRequest,
 } from '@symposium/adapters';
 import { postMessage, postNotice } from '../chat.js';
 import type { AppContext } from '../context.js';
@@ -51,6 +55,17 @@ export interface RunnerHooks {
     agent: Agent,
     workspace: Workspace,
   ): Promise<WorktreeChanges | undefined>;
+  /**
+   * Decides a terminal command the agent wants to run during its turn. May take as long as a
+   * human takes to answer. Without this hook no agent gets a terminal.
+   */
+  decideCommand?(
+    group: Group,
+    agent: Agent,
+    workspace: Workspace,
+    request: CommandRequest,
+    signal: AbortSignal,
+  ): Promise<CommandDecision>;
 }
 
 /** A message waiting for an agent's next turn. */
@@ -597,6 +612,10 @@ export class TeamRunner {
       const workspace = await this.hooks.prepareWorkspace(group, agent);
       liveChanges = this.watchChanges(group, agent, workspace);
       const watching = liveChanges;
+      const outsideEdits = new Set<string>();
+      // A terminal needs a provider that asks before it runs a command, and an engine to ask.
+      const canAsk = PROVIDERS.find((info) => info.id === agent.provider)?.canRunCommands;
+      const decideCommand = canAsk ? this.hooks.decideCommand?.bind(this.hooks) : undefined;
       // The engine, not the model, decides what the agent may touch.
       const { files: access, effort, commands } = agent.settings;
       const promptInput = {
@@ -606,6 +625,7 @@ export class TeamRunner {
         everyone: listAgents(ctx.db, group.id, { includeFired: true }),
         roleText: await loadRoleText(ctx.rolesDir, agent.role),
         access,
+        terminal: decideCommand ? agent.settings : undefined,
         branch: workspace.branch,
         projectMd: projectForPrompt(await readProjectFile(group.folderPath)),
         memory: memoryForPrompt(await readMemory(ctx.dataDir, agent.id)),
@@ -624,8 +644,14 @@ export class TeamRunner {
         access,
         effort,
         commands,
+        // The engine, not the model and not the provider, decides every command.
+        onCommand:
+          decideCommand && commands !== 'off'
+            ? (request) => decideCommand(group, agent, workspace, request, signal)
+            : undefined,
         onEvent: (event) => {
           this.onAgentEvent(group, agent, event);
+          this.warnAboutOutsideEdit(group, agent, event, outsideEdits);
           // Any tool call may have changed files: providers add tools this code has no name
           // for. Looking again is cheap, and it is paced.
           if (event.kind !== 'text') watching?.request();
@@ -719,6 +745,32 @@ export class TeamRunner {
       );
     } catch {
       // Reporting progress must never break the turn it reports on.
+    }
+  }
+
+  /**
+   * A provider's own sandbox may let an agent write somewhere outside its folder, such as the
+   * CLI's scratch folder. Symposium cannot undo that, but it says so, once per file and turn.
+   * Adapters show a path in full only when it lies outside the agent's folder.
+   */
+  private warnAboutOutsideEdit(
+    group: Group,
+    agent: Agent,
+    event: AgentEvent,
+    warned: Set<string>,
+  ): void {
+    const path = event.kind === 'edit' ? event.target : undefined;
+    if (path === undefined || !isAbsolute(path) || warned.has(path)) return;
+    warned.add(path);
+    try {
+      postNotice(
+        this.ctx,
+        group.id,
+        `${agent.name} changed a file outside its folder: ${path}. Symposium does not track or commit it.`,
+        'warning',
+      );
+    } catch {
+      // Reporting must never break the turn.
     }
   }
 

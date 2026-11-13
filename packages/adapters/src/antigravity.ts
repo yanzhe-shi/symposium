@@ -1,4 +1,12 @@
-import { asRecord, displayPath, firstString, parseJsonLine, toolEvent } from './events.js';
+import {
+  asRecord,
+  displayPath,
+  firstString,
+  parseJsonLine,
+  toolEvent,
+  type ToolKind,
+} from './events.js';
+import { runAntigravityAcp } from './antigravity-acp.js';
 import { runProcess, runUnderPty, type ProcessOptions, type ProcessResult } from './process.js';
 import {
   AdapterError,
@@ -26,22 +34,30 @@ interface AgyResult {
 const EFFORT_SUFFIX = /-(low|medium|high|xhigh|max)$/;
 
 /** `agy` has no system prompt flag, so the system prompt goes at the top of the prompt. */
+export function antigravityPrompt(task: AgentTask): string {
+  return `${task.systemPrompt}\n\n---\n\n${task.prompt}`;
+}
+
+/** The model to ask for and the effort to set, given that some model names end in an effort. */
+export function antigravityModel(task: AgentTask): { model: string; effort?: string } {
+  const effort = task.effort && task.effort !== 'default' ? task.effort : undefined;
+  // `agy` refuses an effort next to a model name that already carries one. The agent's effort
+  // setting is the more specific choice, so it replaces the one in the name.
+  return { model: effort ? task.model.replace(EFFORT_SUFFIX, '') : task.model, effort };
+}
+
 export function antigravityArgs(task: AgentTask): string[] {
-  const prompt = `${task.systemPrompt}\n\n---\n\n${task.prompt}`;
+  const prompt = antigravityPrompt(task);
   // One JSON object per line as the turn goes on, ending with the result.
   const args = ['-p', prompt, '--output-format', 'stream-json', ...MODE_ARGS[task.access]];
-  const effort = task.effort && task.effort !== 'default' ? task.effort : undefined;
-  // `agy` refuses `--effort` next to a model name that already carries one. The agent's effort
-  // setting is the more specific choice, so it replaces the one in the name.
-  const model = effort ? task.model.replace(EFFORT_SUFFIX, '') : task.model;
+  const { model, effort } = antigravityModel(task);
   if (model) args.push('--model', model);
   if (effort) args.push('--effort', effort);
   return args;
 }
 
-type ToolKind = 'read' | 'edit' | 'search' | 'command' | 'tool';
-
-const KIND_BY_TOOL: Record<string, ToolKind> = {
+/** `agy`'s tool names, by the kind of event they are reported as. */
+export const KIND_BY_TOOL: Record<string, ToolKind> = {
   read_file: 'read',
   view_file: 'read',
   list_dir: 'read',
@@ -131,8 +147,12 @@ export function parseAntigravityOutput(stdout: string): AntigravityOutput {
 }
 
 /**
- * Runs the official `agy` CLI in print mode with the user's own login.
- * `agy -p` may print nothing when stdout is not a TTY; then it is run again under a pseudo-terminal.
+ * Runs the official `agy` CLI with the user's own login.
+ *
+ * A turn without terminal commands uses print mode, `agy -p`. That may print nothing when
+ * stdout is not a TTY; then it is run again under a pseudo-terminal. Print mode cannot ask
+ * before it runs a command, so a turn that may run commands goes through `agy acp` instead
+ * (see antigravity-acp.ts).
  */
 export class AntigravityAdapter implements AgentAdapter {
   readonly provider = 'antigravity' as const;
@@ -140,6 +160,9 @@ export class AntigravityAdapter implements AgentAdapter {
   constructor(private readonly command = 'agy') {}
 
   async run(task: AgentTask): Promise<AgentReply> {
+    if (task.onCommand !== undefined && task.commands !== undefined && task.commands !== 'off') {
+      return runAntigravityAcp(this.command, task);
+    }
     const options: ProcessOptions = {
       command: this.command,
       args: antigravityArgs(task),

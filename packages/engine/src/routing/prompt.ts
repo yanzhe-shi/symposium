@@ -1,5 +1,5 @@
 import type { AgentAccess } from '@symposium/adapters';
-import type { Agent, Group, Message } from '../protocol.js';
+import type { Agent, AgentSettings, Group, Message } from '../protocol.js';
 import { applyPlanApproval, roleAccess } from '../roles.js';
 
 /** Upper bound on the conversation part of a prompt, in characters. Oldest messages go first. */
@@ -19,6 +19,8 @@ export interface PromptInput {
   everyone: Agent[];
   roleText: string;
   access: AgentAccess;
+  /** The agent's terminal: its command mode and allow-list. Left out, it has none. */
+  terminal?: Pick<AgentSettings, 'commands' | 'allowlist'>;
   /** Branch the agent works on, for workers. */
   branch?: string;
   projectMd: string;
@@ -36,16 +38,49 @@ function describeAgent(agent: Agent): string {
   return `${agent.name}: ${agent.role}${specialty}`;
 }
 
-function accessRules(access: AgentAccess, branch?: string): string {
+/** What the agent is told about its terminal. The engine enforces all of it. */
+function terminalRules(terminal: PromptInput['terminal'], access: AgentAccess): string[] {
+  if (!terminal || terminal.commands === 'off') {
+    return [
+      access === 'edit'
+        ? '- You cannot run shell commands, install packages or use git.'
+        : '- You cannot run shell commands.',
+    ];
+  }
+  const listed = terminal.allowlist.map((pattern) => `\`${pattern}\``).join(', ');
+  const how =
+    access !== 'edit'
+      ? `You can run only these terminal commands, in the project folder: ${listed || '(none yet)'}.`
+      : terminal.commands === 'auto'
+        ? 'You can run terminal commands in your folder. A few always wait for the CEO: `git push`, `sudo`, deleting branches, and anything that reaches outside your folder.'
+        : terminal.commands === 'allowlist'
+          ? `You can run terminal commands in your folder. These run at once: ${listed || '(none yet)'}. The CEO approves any other command first, which can take a while.`
+          : 'You can run terminal commands in your folder, but the CEO approves each one first, which can take a while. Run only what the task needs.';
+  return [
+    `- ${how}`,
+    '- If a command is refused, do not retry it or try another way around. Carry on without it and say what you could not check.',
+    '- Leave git to Symposium: do not commit, push or switch branches.',
+  ];
+}
+
+function accessRules(
+  access: AgentAccess,
+  branch: string | undefined,
+  terminal: PromptInput['terminal'],
+): string {
+  const commands = terminalRules(terminal, access);
   switch (access) {
     case 'edit':
       return [
         `- You work in your own git worktree${branch ? ` on branch \`${branch}\`` : ''}. Edit files there.`,
         '- After your turn Symposium commits your changes and shows the CEO a diff. Nothing reaches the main project until the CEO merges it.',
-        '- You cannot run shell commands, install packages or use git.',
+        ...commands,
       ].join('\n');
     case 'read':
-      return '- You can read files in the project folder, but you cannot change them or run commands.';
+      return [
+        '- You can read files in the project folder, but you cannot change them.',
+        ...commands,
+      ].join('\n');
     case 'none':
       return '- You have no tools. Work only from the text you are given.';
   }
@@ -68,7 +103,7 @@ const START_NOW = `## Start right away
 The CEO has turned off plan approval. When you get a goal, give a short plan and assign the first tasks in the same reply. Don't wait for a go-ahead: the CEO can redirect or stop the team at any time.`;
 
 export function buildSystemPrompt(input: PromptInput): string {
-  const { group, agent, team, roleText, access, branch } = input;
+  const { group, agent, team, roleText, access, branch, terminal } = input;
   const roster = team
     .map((member) => `- ${describeAgent(member)}${member.id === agent.id ? ' (you)' : ''}`)
     .join('\n');
@@ -88,7 +123,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       '- Never mention yourself. The CEO needs no mention.',
       '- Teammates work at the same time, and the CEO can write at any moment without stopping anyone. Messages that arrive while you work reach you together in your next turn: answer them all in one reply.',
       '- Keep replies short and concrete. No greetings or sign-offs.',
-      accessRules(access, branch),
+      accessRules(access, branch, terminal),
       // The role text describes the role's usual access. Say so when this agent's differs.
       ...(access === roleAccess(agent.role)
         ? []

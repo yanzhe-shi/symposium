@@ -15,6 +15,7 @@ import type {
   RoleInfo,
   ServerEvent,
   TeamStatus,
+  TerminalRun,
   UpdateAgentRequest,
   UpdateGroupRequest,
   WorktreeChanges,
@@ -75,7 +76,14 @@ export const api = {
   decide: (
     groupId: string,
     messageId: number,
-    decision: 'approve-hire' | 'reject-hire' | 'merge' | 'discard',
+    decision:
+      | 'approve-hire'
+      | 'reject-hire'
+      | 'merge'
+      | 'discard'
+      | 'allow-command'
+      | 'always-allow-command'
+      | 'deny-command',
   ) => send<Message>('POST', `${groupUrl(groupId)}/messages/${messageId}/${decision}`),
 
   runStatus: (groupId: string) => request<TeamStatus>(`${groupUrl(groupId)}/run`),
@@ -94,6 +102,12 @@ export const api = {
     request<FolderListing>(`${groupUrl(groupId)}/files?${new URLSearchParams({ where, path })}`),
   file: (groupId: string, where: CodeLocation, path: string) =>
     request<FileContent>(`${groupUrl(groupId)}/file?${new URLSearchParams({ where, path })}`),
+
+  /** Runs a command of your own in the project folder or a worktree. Output comes as events. */
+  runCommand: (groupId: string, where: CodeLocation, command: string) =>
+    send<TerminalRun>('POST', `${groupUrl(groupId)}/terminal`, { where, command }),
+  stopCommand: (groupId: string, runId: string) =>
+    send<{ stopped: boolean }>('POST', `${groupUrl(groupId)}/terminal/${runId}/stop`),
 
   project: (groupId: string) => request<{ content: string }>(`${groupUrl(groupId)}/project`),
   saveProject: (groupId: string, content: string) =>

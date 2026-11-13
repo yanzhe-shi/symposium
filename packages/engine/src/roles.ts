@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AgentAccess } from '@symposium/adapters';
+import type { AgentAccess, CommandMode } from '@symposium/adapters';
 import type { RoleInfo, RoleKind } from './protocol.js';
 
 /** What each role may touch unless the human chooses otherwise. Fixed by the engine, not by the model. */
@@ -16,7 +16,15 @@ export function roleAccess(role: RoleKind): AgentAccess {
   }
 }
 
-const ROLE_TEXT: readonly Omit<RoleInfo, 'defaultFiles'>[] = [
+/**
+ * Whether a role gets a terminal unless the human chooses otherwise. Workers do, and every
+ * command of theirs waits for the human. Nobody else does.
+ */
+export function roleCommands(role: RoleKind): CommandMode {
+  return role === 'worker' ? 'ask' : 'off';
+}
+
+const ROLE_TEXT: readonly Omit<RoleInfo, 'defaultFiles' | 'defaultCommands'>[] = [
   {
     kind: 'lead',
     title: 'Lead',
@@ -25,7 +33,8 @@ const ROLE_TEXT: readonly Omit<RoleInfo, 'defaultFiles'>[] = [
   {
     kind: 'worker',
     title: 'Worker',
-    summary: 'Builds what the lead assigns, on its own git branch and worktree.',
+    summary:
+      'Builds what the lead assigns, on its own git branch and worktree. Asks you before running a command.',
   },
   {
     kind: 'reviewer',
@@ -42,6 +51,7 @@ const ROLE_TEXT: readonly Omit<RoleInfo, 'defaultFiles'>[] = [
 export const ROLES: readonly RoleInfo[] = ROLE_TEXT.map((role) => ({
   ...role,
   defaultFiles: roleAccess(role.kind),
+  defaultCommands: roleCommands(role.kind),
 }));
 
 export function isRoleKind(value: string): value is RoleKind {

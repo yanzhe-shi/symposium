@@ -8,10 +8,12 @@ import {
   groupReducer,
   initialGroupState,
   MAX_PROGRESS,
+  MAX_TERMINAL_CHARS,
   mergeMessages,
   mergeProgress,
   queuedCount,
   queuedFor,
+  terminalReport,
   workingAgents,
 } from './group-state.ts';
 import { formatSize } from './text-format.ts';
@@ -143,9 +145,22 @@ describe('groupReducer', () => {
   });
 
   it('shows on a card only the settings that differ from the usual', () => {
-    expect(settingsSummary(agent('a'), 'edit')).toEqual([]);
+    const role = (defaultFiles: 'edit' | 'read', defaultCommands: 'ask' | 'off') => ({
+      kind: 'worker' as const,
+      title: '',
+      summary: '',
+      defaultFiles,
+      defaultCommands,
+    });
+    const worker = {
+      ...agent('a'),
+      settings: { ...agent('a').settings, commands: 'ask' as const },
+    };
+    expect(settingsSummary(worker, role('edit', 'ask'))).toEqual([]);
     const lead = { ...agent('l'), settings: { ...agent('l').settings, effort: 'high' as const } };
-    expect(settingsSummary(lead, 'read')).toEqual(['files: edit', 'effort: high']);
+    expect(settingsSummary(lead, role('read', 'off'))).toEqual(['files: edit', 'effort: high']);
+    const free = { ...worker, settings: { ...worker.settings, commands: 'auto' as const } };
+    expect(settingsSummary(free, role('edit', 'ask'))).toEqual(['commands: auto']);
   });
 
   it('labels an agent card by what the agent is doing', () => {
@@ -232,6 +247,60 @@ describe('groupReducer', () => {
       agents: [agent('a'), reader, agent('old', 5)],
     });
     expect(editingAgents(state).map((a) => a.id)).toEqual(['a']);
+  });
+
+  it('follows a command you run yourself, from its first output to its exit', () => {
+    const run = {
+      runId: 'r1',
+      where: 'project',
+      folder: 'the project folder',
+      command: 'pnpm test',
+    };
+    // Output can beat the answer that says the run has started.
+    let state = groupReducer(initialGroupState, { type: 'terminalOutput', runId: 'r1', text: 'a' });
+    state = groupReducer(state, { type: 'terminalStarted', run });
+    state = groupReducer(state, { type: 'terminalOutput', runId: 'r1', text: 'b\n' });
+    expect(state.terminal).toEqual({ ...run, output: 'ab\n', running: true, exitCode: null });
+
+    // An older run that is still printing does not take over the box.
+    expect(groupReducer(state, { type: 'terminalOutput', runId: 'old', text: 'x' })).toBe(state);
+
+    state = groupReducer(state, { type: 'terminalExit', runId: 'r1', exitCode: 1 });
+    expect(state.terminal).toMatchObject({ running: false, exitCode: 1, output: 'ab\n' });
+    // The command may have changed files, so the Code tab reloads.
+    expect(state.filesVersion).toBe(1);
+
+    state = groupReducer(state, {
+      type: 'terminalStarted',
+      run: { ...run, runId: 'r2', command: 'ls' },
+    });
+    expect(state.terminal).toMatchObject({ runId: 'r2', output: '', running: true });
+    const long = 'x'.repeat(MAX_TERMINAL_CHARS + 10);
+    state = groupReducer(state, { type: 'terminalOutput', runId: 'r2', text: `${long}end` });
+    expect(state.terminal!.output).toHaveLength(MAX_TERMINAL_CHARS);
+    expect(state.terminal!.output.endsWith('end')).toBe(true);
+  });
+
+  it('writes up a command for the chat, with the end of its output', () => {
+    const run = {
+      runId: 'r1',
+      where: 'project',
+      folder: 'the project folder',
+      command: 'pnpm test',
+      output: 'line 1\n```\n2 tests failed\n',
+      running: false,
+      exitCode: 1,
+    };
+    expect(terminalReport(run)).toBe(
+      "I ran `pnpm test` in the project folder (exit code 1):\n\n```\nline 1\n'''\n2 tests failed\n```",
+    );
+    expect(terminalReport({ ...run, output: '', exitCode: 0 })).toContain(
+      '(ok):\n\n```\n(no output)',
+    );
+    expect(terminalReport({ ...run, exitCode: null })).toContain('(stopped)');
+    expect(terminalReport({ ...run, output: 'a'.repeat(50) + 'tail' }, 10)).toContain(
+      '```\n…aaaaaatail\n```',
+    );
   });
 
   it('formats file sizes', () => {

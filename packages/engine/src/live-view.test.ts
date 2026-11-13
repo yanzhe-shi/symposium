@@ -136,6 +136,29 @@ describe('agent progress', () => {
     expect(newest.map((entry) => entry.agentId)).toEqual([bob.id]);
   });
 
+  it('warns when an agent changes a file outside its folder', async () => {
+    const outside: AgentEvent = {
+      kind: 'edit',
+      tool: 'Write',
+      target: '/tmp/scratch/placeholder.txt',
+      summary: 'edited /tmp/scratch/placeholder.txt',
+    };
+    await hire('Ada', 'worker', [{ text: 'Done.', events: [EDIT, outside, outside, READ] }]);
+    await say('@Ada go');
+    await settle();
+    const messages: { body: string; meta: { level?: string } | null }[] = (
+      await t.request({ url: `/api/groups/${group.id}/messages` })
+    ).json();
+    const warnings = messages.filter((message) => message.body.includes('outside its folder'));
+    // Once per file, and not for the edit inside the folder.
+    expect(warnings.map((message) => [message.body, message.meta?.level])).toEqual([
+      [
+        'Ada changed a file outside its folder: /tmp/scratch/placeholder.txt. Symposium does not track or commit it.',
+        'warning',
+      ],
+    ]);
+  });
+
   it('carries on when a listener fails', async () => {
     await hire('Ada', 'worker', [{ text: 'Done.', events: [READ] }]);
     const hub = t.app.symposium.ctx.hub;

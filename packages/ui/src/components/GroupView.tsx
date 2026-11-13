@@ -21,7 +21,7 @@ interface GroupViewProps {
 }
 
 export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
-  const { state, status, loadError, send } = useGroup(group.id, onGroupChanged);
+  const { state, status, loadError, send, runCommand } = useGroup(group.id, onGroupChanged);
   const [panel, setPanel] = useState<'team' | 'project' | 'code'>('team');
   const [code, setCode] = useState<{ where: CodeLocation; view: CodeView }>({
     where: 'project',
@@ -208,6 +208,9 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
               editors={editingAgents(state)}
               liveChanges={state.liveChanges}
               filesVersion={state.filesVersion}
+              terminal={state.terminal}
+              onRun={runCommand}
+              onPost={send}
               where={code.where}
               view={code.view}
               onChoose={(where, view) => setCode({ where, view })}

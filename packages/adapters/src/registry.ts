@@ -10,6 +10,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     id: 'claude-code',
     label: 'Claude Code (CLI)',
     canEditFiles: true,
+    canRunCommands: true,
     modelSuggestions: ['sonnet', 'opus', 'haiku', 'fable'],
     smallModel: 'haiku',
     description:
@@ -19,14 +20,17 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     id: 'antigravity',
     label: 'Antigravity (CLI)',
     canEditFiles: true,
+    canRunCommands: true,
     modelSuggestions: ['gemini-3.8-flash-medium', 'gemini-3.8-flash-low', 'claude-sonnet-4-6'],
     smallModel: 'gemini-3.8-flash-low',
-    description: 'Runs `agy -p` with your own Antigravity login.',
+    description:
+      'Runs `agy` with your own Antigravity login: print mode, or its ACP server when the agent has a terminal.',
   },
   {
     id: 'openai-compatible',
     label: 'OpenAI-compatible API',
     canEditFiles: false,
+    canRunCommands: false,
     modelSuggestions: ['llama3.2', 'qwen2.5-coder', 'gpt-4.1-mini'],
     smallModel: 'llama3.2',
     description:
@@ -36,6 +40,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     id: 'mock',
     label: 'Mock (no AI)',
     canEditFiles: false,
+    canRunCommands: true,
     modelSuggestions: ['mock'],
     smallModel: 'mock',
     description: 'Echoes messages back. Free, for trying out Symposium.',

@@ -122,6 +122,28 @@ interface WhereQuery {
 }
 
 /**
+ * The folder the Code tab means by `where`: the project folder (`project`), or the worktree of
+ * the agent with that id. `agent` is set for a worktree.
+ */
+export function codeFolder(
+  ctx: AppContext,
+  group: Group,
+  where: string,
+): { path: string; label: string; agent?: Agent } {
+  if (where === 'project') {
+    if (!group.folderPath) throw badRequest('This group has no project folder');
+    return { path: group.folderPath, label: 'the project folder' };
+  }
+  const agent = getAgent(ctx.db, where);
+  if (!agent || agent.groupId !== group.id) throw notFound('Agent not found');
+  return {
+    path: worktreePath(ctx.dataDir, group, agent),
+    label: `${agent.name}'s worktree`,
+    agent,
+  };
+}
+
+/**
  * Read-only views for the Code tab: the files of the project folder or of an agent's worktree,
  * an agent's uncommitted changes, and what agents did recently. Nothing here can write.
  */
@@ -132,14 +154,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     return agent;
   }
 
-  /** The folder a request may look into: the project folder, or one agent's worktree. */
-  function rootOf(group: Group, where: string): string {
-    if (where === 'project') {
-      if (!group.folderPath) throw badRequest('This group has no project folder');
-      return group.folderPath;
-    }
-    return worktreePath(ctx.dataDir, group, requireAgent(group, where));
-  }
+  const rootOf = (group: Group, where: string): string => codeFolder(ctx, group, where).path;
 
   /** The requested path with `/` separators, as the UI addresses it. */
   function shownPath(path: string | undefined): string {

@@ -42,7 +42,10 @@ export type EffortLevel = 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max
 export interface AgentSettings {
   /** `edit` gives the agent its own branch and worktree. `read` shows it the project folder. */
   files: FileAccess;
-  /** Terminal commands. Not in use until the approval flow exists (milestone 11). */
+  /**
+   * Terminal commands: `off`, `ask` (you approve each one), `allowlist` (listed commands run,
+   * you approve the rest) or `auto` (commands run). Some commands always ask.
+   */
   commands: CommandMode;
   /** Command patterns that run without asking when `commands` is `allowlist`. */
   allowlist: string[];
@@ -65,6 +68,7 @@ export interface ProviderInfo {
   id: ProviderId;
   label: string;
   canEditFiles: boolean;
+  canRunCommands: boolean;
   modelSuggestions: string[];
   smallModel: string;
   description: string;
@@ -76,6 +80,8 @@ export interface RoleInfo {
   summary: string;
   /** The file access agents in this role get unless the human chooses otherwise. */
   defaultFiles: FileAccess;
+  /** The command mode agents in this role get unless the human chooses otherwise. */
+  defaultCommands: CommandMode;
 }
 
 export interface Agent {
@@ -109,6 +115,11 @@ export interface HireRequest {
 export type UpdateAgentRequest = Partial<Omit<HireRequest, 'name'>>;
 
 export type DiffStatus = 'pending' | 'merged' | 'discarded' | 'superseded';
+/**
+ * What became of a command an agent asked to run. `expired`: nobody answered in time.
+ * `cancelled`: the agent was stopped, or the engine restarted, while it waited.
+ */
+export type CommandStatus = 'pending' | 'allowed' | 'denied' | 'expired' | 'cancelled';
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 
 /** Structured data attached to a message. The UI renders these specially. */
@@ -131,6 +142,21 @@ export type MessageMeta =
       stat: string;
       diff: string;
       truncated: boolean;
+    }
+  | {
+      /** An agent wants to run a terminal command and waits for the human. */
+      type: 'command';
+      status: CommandStatus;
+      agentId: string;
+      command: string;
+      /** Where it would run, in words: "Ada's worktree (symposium/ada)". */
+      folder: string;
+      /** Why the human is asked. */
+      reason: string;
+      /** The patterns "Always allow" would add to the agent's allow-list. Empty: not offered. */
+      patterns: string[];
+      /** Set when the human chose "Always allow". */
+      always?: boolean;
     };
 
 export interface Message {
@@ -165,7 +191,8 @@ export interface TeamStatus {
 }
 
 /** Mirrors the adapters package: what an agent did part-way through a turn. */
-export type AgentEventKind = 'text' | 'read' | 'edit' | 'search' | 'command' | 'tool' | 'denied';
+export type AgentEventKind =
+  'text' | 'read' | 'edit' | 'search' | 'command' | 'tool' | 'denied' | 'output';
 
 export interface AgentEvent {
   kind: AgentEventKind;
@@ -175,6 +202,10 @@ export interface AgentEvent {
   target?: string;
   /** One line for the activity timeline, such as "read src/cart.ts". */
   summary: string;
+  /** For `output`: the end of what a command printed. */
+  output?: string;
+  /** For `output`: the command's exit code, when known. */
+  exitCode?: number;
 }
 
 /** One entry in an agent's activity timeline. */
@@ -234,7 +265,27 @@ export type ServerEvent =
   | { type: 'agent.progress'; progress: AgentProgress }
   /** An agent's uncommitted work changed. Empty once its turn's work is committed. */
   | { type: 'worktree.changed'; agentId: string; changes: WorktreeChanges }
+  /** Output of a command the human runs from the Code tab. */
+  | { type: 'terminal.output'; runId: string; text: string }
+  /** That command ended. `exitCode` is null when it was stopped or could not start. */
+  | { type: 'terminal.exit'; runId: string; exitCode: number | null }
   | { type: 'project.updated' };
+
+/** Body of `POST /api/groups/:id/terminal`: a command the human runs themselves. */
+export interface RunCommandRequest {
+  /** `project`, or the id of an agent whose worktree to run in. */
+  where: string;
+  command: string;
+}
+
+/** A command the human started from the Code tab. */
+export interface TerminalRun {
+  runId: string;
+  where: string;
+  /** Where it runs, in words. */
+  folder: string;
+  command: string;
+}
 
 export interface CreateMessageRequest {
   body: string;

@@ -65,10 +65,14 @@ describe('agent settings', () => {
   it('start from the role: workers edit, leads and reviewers read, the scribe has no tools', () => {
     expect(defaultSettings('worker')).toEqual({
       files: 'edit',
-      commands: 'off',
+      commands: 'ask',
       allowlist: [],
       effort: 'default',
     });
+    // Only workers get a terminal unless the human gives one, and theirs asks every time.
+    expect(defaultSettings('lead').commands).toBe('off');
+    expect(defaultSettings('reviewer').commands).toBe('off');
+    expect(defaultSettings('scribe').commands).toBe('off');
     expect(defaultSettings('lead').files).toBe('read');
     expect(defaultSettings('reviewer').files).toBe('read');
     expect(defaultSettings('scribe').files).toBe('none');
@@ -139,8 +143,12 @@ describe('agent settings', () => {
     expect(t.mocks.get('Ada')!.calls[0]).toMatchObject({
       access: 'edit',
       effort: 'max',
-      commands: 'off',
+      commands: 'ask',
     });
+    expect(t.mocks.get('Ada')!.calls[0]!.onCommand).toBeTypeOf('function');
+    // No terminal: the adapter is given nobody to ask, so it cannot offer one.
+    expect(t.mocks.get('Rex')!.calls[0]!.commands).toBe('off');
+    expect(t.mocks.get('Rex')!.calls[0]!.onCommand).toBeUndefined();
     const rex = t.mocks.get('Rex')!.calls[0]!;
     expect(rex).toMatchObject({ access: 'none', effort: 'default' });
     expect(rex.systemPrompt).toContain('You have no tools.');

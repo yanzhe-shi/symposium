@@ -3,6 +3,7 @@ import type {
   AgentActivity,
   AgentProgress,
   Group,
+  RoleInfo,
   WorktreeChanges,
 } from '@symposium/engine/protocol';
 import { useState } from 'react';
@@ -49,7 +50,14 @@ function ActivityTimeline({ progress }: { progress: AgentProgress[] }) {
             <time className="muted" dateTime={new Date(entry.at).toISOString()}>
               {clockFormat.format(entry.at)}
             </time>
-            <span title={entry.event.target}>{entry.event.summary}</span>
+            {entry.event.output ? (
+              <details>
+                <summary title={entry.event.target}>{entry.event.summary}</summary>
+                <pre className="timeline-output-text">{entry.event.output}</pre>
+              </details>
+            ) : (
+              <span title={entry.event.target}>{entry.event.summary}</span>
+            )}
           </li>
         ))}
     </ol>
@@ -64,9 +72,12 @@ export function agentStatusLabel(working: boolean, queued: number): string {
 }
 
 /** The settings worth showing on a card: only what differs from the role's usual setup. */
-export function settingsSummary(agent: Agent, roleFiles: string | undefined): string[] {
+export function settingsSummary(agent: Agent, role: RoleInfo | undefined): string[] {
   const parts: string[] = [];
-  if (agent.settings.files !== roleFiles) parts.push(`files: ${agent.settings.files}`);
+  if (agent.settings.files !== role?.defaultFiles) parts.push(`files: ${agent.settings.files}`);
+  if (agent.settings.commands !== role?.defaultCommands) {
+    parts.push(`commands: ${agent.settings.commands}`);
+  }
   if (agent.settings.effort !== 'default') parts.push(`effort: ${agent.settings.effort}`);
   return parts;
 }
@@ -154,7 +165,7 @@ export function TeamPanel({
                   agent.model,
                   ...settingsSummary(
                     agent,
-                    catalog.roles.find((role) => role.kind === agent.role)?.defaultFiles,
+                    catalog.roles.find((role) => role.kind === agent.role),
                   ),
                 ].join(' · ')}
               </div>

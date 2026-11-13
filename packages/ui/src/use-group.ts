@@ -1,6 +1,6 @@
 import type { Agent, Group } from '@symposium/engine/protocol';
 import { useCallback, useEffect, useEffectEvent, useReducer, useState } from 'react';
-import { api, connectGroup, type ConnectionStatus } from './api.ts';
+import { api, connectGroup, type CodeLocation, type ConnectionStatus } from './api.ts';
 import { groupReducer, initialGroupState, type GroupState } from './group-state.ts';
 
 export interface UseGroup {
@@ -8,6 +8,8 @@ export interface UseGroup {
   status: ConnectionStatus;
   loadError: string | undefined;
   send: (body: string) => Promise<void>;
+  /** Runs a command of your own in the project folder or an agent's worktree. */
+  runCommand: (where: CodeLocation, command: string) => Promise<void>;
   reloadAgents: () => Promise<void>;
 }
 
@@ -88,6 +90,12 @@ export function useGroup(groupId: string, onGroupChanged: (group: Group) => void
           case 'worktree.changed':
             dispatch({ type: 'changes', agentId: event.agentId, changes: event.changes });
             break;
+          case 'terminal.output':
+            dispatch({ type: 'terminalOutput', runId: event.runId, text: event.text });
+            break;
+          case 'terminal.exit':
+            dispatch({ type: 'terminalExit', runId: event.runId, exitCode: event.exitCode });
+            break;
           case 'agents.changed':
             void api.agents(groupId).then((agents) => {
               if (active) dispatch({ type: 'agentsLoaded', agents });
@@ -133,5 +141,12 @@ export function useGroup(groupId: string, onGroupChanged: (group: Group) => void
     [groupId],
   );
 
-  return { state, status, loadError, send, reloadAgents };
+  const runCommand = useCallback(
+    async (where: CodeLocation, command: string) => {
+      dispatch({ type: 'terminalStarted', run: await api.runCommand(groupId, where, command) });
+    },
+    [groupId],
+  );
+
+  return { state, status, loadError, send, runCommand, reloadAgents };
 }

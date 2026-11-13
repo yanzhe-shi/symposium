@@ -5,12 +5,13 @@ import type {
   Group,
   WorktreeChanges,
 } from '@symposium/engine/protocol';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api, type CodeLocation } from '../api.ts';
+import { terminalReport, type TerminalState } from '../group-state.ts';
 import { formatSize } from '../text-format.ts';
 import { DiffView } from './DiffView.tsx';
 
-export type CodeView = 'files' | 'changes';
+export type CodeView = 'files' | 'changes' | 'terminal';
 
 interface CodePanelProps {
   group: Group;
@@ -19,20 +20,28 @@ interface CodePanelProps {
   liveChanges: Record<string, WorktreeChanges>;
   /** Changes whenever files may have changed on disk. */
   filesVersion: number;
+  /** The newest command the human ran from here. */
+  terminal: TerminalState | undefined;
+  onRun: (where: CodeLocation, command: string) => Promise<void>;
+  /** Posts a message to the chat as the human. */
+  onPost: (body: string) => Promise<void>;
   where: CodeLocation;
   view: CodeView;
   onChoose: (where: CodeLocation, view: CodeView) => void;
 }
 
 /**
- * Read-only look at the code: the project folder, or any agent's worktree with the changes it
- * has made but not yet committed.
+ * The code: the project folder, or any agent's worktree with the changes it has made but not
+ * yet committed. Files are read-only. The Terminal runs a command of your own there.
  */
 export function CodePanel({
   group,
   editors,
   liveChanges,
   filesVersion,
+  terminal,
+  onRun,
+  onPost,
   where,
   view,
   onChoose,
@@ -41,9 +50,16 @@ export function CodePanel({
   const agent = editors.find((editor) => editor.id === where);
   // Someone who was fired, or lost edit access, has no worktree to show any more.
   const location: CodeLocation = agent ? agent.id : 'project';
-  const shownView: CodeView = agent ? view : 'files';
   const changes = agent ? liveChanges[agent.id] : undefined;
   const changed = changes?.files.length ?? 0;
+  const shownView: CodeView = agent || view !== 'changes' ? view : 'files';
+  const segments: [CodeView, string][] = [
+    ['files', 'Files'],
+    ...(agent
+      ? [['changes', `Live changes${changed > 0 ? ` (${changed})` : ''}`] as [CodeView, string]]
+      : []),
+    ['terminal', 'Terminal'],
+  ];
 
   return (
     <div className="code-panel">
@@ -62,28 +78,20 @@ export function CodePanel({
             </option>
           ))}
         </select>
-        {agent && (
-          <div className="segmented" role="tablist">
+        <div className="segmented" role="tablist">
+          {segments.map(([segment, label]) => (
             <button
+              key={segment}
               type="button"
               role="tab"
-              aria-selected={shownView === 'files'}
-              className={shownView === 'files' ? 'segment segment-active' : 'segment'}
-              onClick={() => onChoose(location, 'files')}
+              aria-selected={shownView === segment}
+              className={shownView === segment ? 'segment segment-active' : 'segment'}
+              onClick={() => onChoose(location, segment)}
             >
-              Files
+              {label}
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={shownView === 'changes'}
-              className={shownView === 'changes' ? 'segment segment-active' : 'segment'}
-              onClick={() => onChoose(location, 'changes')}
-            >
-              Live changes{changed > 0 ? ` (${changed})` : ''}
-            </button>
-          </div>
-        )}
+          ))}
+        </div>
         <button
           type="button"
           className="button-secondary button-small"
@@ -94,7 +102,15 @@ export function CodePanel({
         </button>
       </div>
 
-      {agent && shownView === 'changes' ? (
+      {shownView === 'terminal' ? (
+        <Terminal
+          folder={agent ? `${agent.name}'s worktree` : 'the project folder'}
+          groupId={group.id}
+          terminal={terminal}
+          onRun={(command) => onRun(location, command)}
+          onPost={onPost}
+        />
+      ) : agent && shownView === 'changes' ? (
         <LiveChanges agent={agent} changes={changes} />
       ) : (
         <FileBrowser
@@ -108,6 +124,109 @@ export function CodePanel({
           }
           refreshKey={`${filesVersion}:${refreshes}`}
         />
+      )}
+    </div>
+  );
+}
+
+interface TerminalProps {
+  /** Where a new command would run, in words. */
+  folder: string;
+  groupId: string;
+  terminal: TerminalState | undefined;
+  onRun: (command: string) => Promise<void>;
+  onPost: (body: string) => Promise<void>;
+}
+
+function exitLabel(run: TerminalState): string {
+  if (run.running) return 'Running…';
+  if (run.exitCode === null) return 'Stopped';
+  return run.exitCode === 0 ? 'Finished' : `Failed (exit code ${run.exitCode})`;
+}
+
+/**
+ * Your own terminal: one command at a time, run in the chosen folder as you would run it
+ * yourself. Agents see nothing of it unless you post the result to the chat.
+ */
+function Terminal({ folder, groupId, terminal, onRun, onPost }: TerminalProps) {
+  const [command, setCommand] = useState('');
+  const [error, setError] = useState<string>();
+  const [posted, setPosted] = useState<string>();
+
+  async function attempt(action: () => Promise<unknown>): Promise<void> {
+    setError(undefined);
+    try {
+      await action();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function run(event: FormEvent): void {
+    event.preventDefault();
+    if (command.trim() === '') return;
+    void attempt(() => onRun(command));
+  }
+
+  return (
+    <div className="terminal">
+      <form className="terminal-form" onSubmit={run}>
+        <input
+          value={command}
+          onChange={(event) => setCommand(event.target.value)}
+          placeholder="pnpm test"
+          aria-label={`Command to run in ${folder}`}
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <button type="submit" disabled={command.trim() === '' || terminal?.running}>
+          Run
+        </button>
+      </form>
+      <p className="muted small">
+        Runs in {folder}, as it would in your own terminal: nothing is asked or checked. Agents do
+        not see the output unless you post it to the chat.
+      </p>
+      {error && <p className="form-error small">{error}</p>}
+      {terminal && (
+        <>
+          <header className="terminal-header small">
+            <code>$ {terminal.command}</code>
+            <span className="muted">
+              {exitLabel(terminal)}
+              {terminal.folder && ` · ${terminal.folder}`}
+            </span>
+          </header>
+          <pre className="terminal-output">
+            {terminal.output || (terminal.running ? '' : '(no output)')}
+          </pre>
+          <div className="form-actions">
+            {terminal.running ? (
+              <button
+                type="button"
+                className="button-danger"
+                onClick={() => void attempt(() => api.stopCommand(groupId, terminal.runId))}
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={posted === terminal.runId}
+                title="Posts the command and the end of its output as a message from you"
+                onClick={() =>
+                  void attempt(async () => {
+                    await onPost(terminalReport(terminal));
+                    setPosted(terminal.runId);
+                  })
+                }
+              >
+                {posted === terminal.runId ? 'Posted to chat' : 'Post to chat'}
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

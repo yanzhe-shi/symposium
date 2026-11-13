@@ -1,13 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { postNotice, setMessageMeta } from '../chat.js';
+import type { CommandApprovals, CommandChoice } from '../commands/approvals.js';
 import type { AppContext } from '../context.js';
 import { badRequest, conflict, notFound } from '../errors.js';
-import type { Message } from '../protocol.js';
+import { MAX_COMMAND_LENGTH, type HumanTerminal } from '../commands/terminal.js';
+import type { Message, RunCommandRequest, TerminalRun } from '../protocol.js';
 import type { TeamRunner } from '../routing/runner.js';
 import { getAgent } from '../store/agents.js';
 import { getMessage } from '../store/messages.js';
 import { hire } from '../team.js';
 import { discardDiff, mergeDiff } from '../workflow.js';
+import { codeFolder } from './files.js';
 import { requireGroup } from './groups.js';
 
 export function requireMessage(ctx: AppContext, groupId: string, messageId: number): Message {
@@ -16,7 +19,52 @@ export function requireMessage(ctx: AppContext, groupId: string, messageId: numb
   return message;
 }
 
-export function registerRunRoutes(app: FastifyInstance, ctx: AppContext, runner: TeamRunner): void {
+const COMMAND_CHOICES: Record<string, CommandChoice> = {
+  'allow-command': 'allow',
+  'always-allow-command': 'always',
+  'deny-command': 'deny',
+};
+
+export function registerRunRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  runner: TeamRunner,
+  approvals: CommandApprovals,
+  terminal: HumanTerminal,
+): void {
+  // The human's own terminal: a command they type in the Code tab, run in the project folder
+  // or in an agent's worktree. Its output arrives over the WebSocket.
+  app.post<{ Params: { groupId: string }; Body: RunCommandRequest }>(
+    '/api/groups/:groupId/terminal',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['where', 'command'],
+          properties: {
+            where: { type: 'string', minLength: 1, maxLength: 100 },
+            command: { type: 'string', minLength: 1, maxLength: MAX_COMMAND_LENGTH },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (request, reply): Promise<TerminalRun> => {
+      const group = requireGroup(ctx, request.params.groupId);
+      const { where, command } = request.body;
+      const run = terminal.start(group, where, codeFolder(ctx, group, where), command);
+      return reply.code(201).send(run);
+    },
+  );
+
+  app.post<{ Params: { groupId: string; runId: string } }>(
+    '/api/groups/:groupId/terminal/:runId/stop',
+    async (request) => {
+      const group = requireGroup(ctx, request.params.groupId);
+      return { stopped: terminal.stop(group.id, request.params.runId) };
+    },
+  );
+
   // Who is working and which messages are waiting in whose inbox.
   app.get<{ Params: { groupId: string } }>('/api/groups/:groupId/run', async (request) => {
     const group = requireGroup(ctx, request.params.groupId);
@@ -41,7 +89,7 @@ export function registerRunRoutes(app: FastifyInstance, ctx: AppContext, runner:
   );
 
   // Decisions only the human can make: approving hires the lead proposed, merging or
-  // discarding a worker's changes.
+  // discarding a worker's changes, and letting an agent run a terminal command.
   app.post<{ Params: { groupId: string; messageId: number; decision: string } }>(
     '/api/groups/:groupId/messages/:messageId/:decision',
     {
@@ -53,7 +101,13 @@ export function registerRunRoutes(app: FastifyInstance, ctx: AppContext, runner:
             messageId: { type: 'integer' },
             decision: {
               type: 'string',
-              enum: ['approve-hire', 'reject-hire', 'merge', 'discard'],
+              enum: [
+                'approve-hire',
+                'reject-hire',
+                'merge',
+                'discard',
+                ...Object.keys(COMMAND_CHOICES),
+              ],
             },
           },
         },
@@ -64,6 +118,8 @@ export function registerRunRoutes(app: FastifyInstance, ctx: AppContext, runner:
       const message = requireMessage(ctx, group.id, request.params.messageId);
       if (request.params.decision === 'merge') return mergeDiff(ctx, group, message);
       if (request.params.decision === 'discard') return discardDiff(ctx, group, message);
+      const commandChoice = COMMAND_CHOICES[request.params.decision];
+      if (commandChoice) return approvals.resolve(group, message, commandChoice);
 
       const meta = message.meta;
       if (meta?.type !== 'hire-proposal') throw badRequest('That message is not a hire proposal');

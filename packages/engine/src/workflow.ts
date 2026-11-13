@@ -1,4 +1,5 @@
 import { postMessage, postNotice, setMessageMeta } from './chat.js';
+import type { CommandApprovals } from './commands/approvals.js';
 import type { AppContext } from './context.js';
 import { badRequest, conflict, notFound } from './errors.js';
 import {
@@ -88,7 +89,7 @@ function oneAtATime<T>(groupId: string, step: () => Promise<T>): Promise<T> {
   return next;
 }
 
-export function createRunnerHooks(ctx: AppContext): RunnerHooks {
+export function createRunnerHooks(ctx: AppContext, approvals: CommandApprovals): RunnerHooks {
   return {
     async prepareWorkspace(group, agent) {
       // Whoever may edit does so in their own worktree, whatever their role. Everyone else
@@ -106,6 +107,19 @@ export function createRunnerHooks(ctx: AppContext): RunnerHooks {
     // Only looks, so it does not wait in the queue behind the git steps above.
     liveChanges: async (_group, _agent, workspace) =>
       workspace.branch ? uncommittedChanges(workspace.cwd) : undefined,
+    decideCommand: (group, agent, workspace, request, signal) =>
+      approvals.decide(
+        group,
+        agent.id,
+        {
+          cwd: workspace.cwd,
+          label: workspace.branch
+            ? `${agent.name}'s worktree (${workspace.branch})`
+            : 'the project folder',
+        },
+        request,
+        signal,
+      ),
   };
 }
 
