@@ -1,9 +1,11 @@
+import { asRecord, displayPath, firstString, parseJsonLine, toolEvent } from './events.js';
 import { runProcess, runUnderPty, type ProcessOptions, type ProcessResult } from './process.js';
 import {
   AdapterError,
   DEFAULT_TIMEOUT_MS,
   type AgentAccess,
   type AgentAdapter,
+  type AgentEvent,
   type AgentReply,
   type AgentTask,
 } from './types.js';
@@ -26,7 +28,8 @@ const EFFORT_SUFFIX = /-(low|medium|high|xhigh|max)$/;
 /** `agy` has no system prompt flag, so the system prompt goes at the top of the prompt. */
 export function antigravityArgs(task: AgentTask): string[] {
   const prompt = `${task.systemPrompt}\n\n---\n\n${task.prompt}`;
-  const args = ['-p', prompt, '--output-format', 'json', ...MODE_ARGS[task.access]];
+  // One JSON object per line as the turn goes on, ending with the result.
+  const args = ['-p', prompt, '--output-format', 'stream-json', ...MODE_ARGS[task.access]];
   const effort = task.effort && task.effort !== 'default' ? task.effort : undefined;
   // `agy` refuses `--effort` next to a model name that already carries one. The agent's effort
   // setting is the more specific choice, so it replaces the one in the name.
@@ -36,28 +39,92 @@ export function antigravityArgs(task: AgentTask): string[] {
   return args;
 }
 
+type ToolKind = 'read' | 'edit' | 'search' | 'command' | 'tool';
+
+const KIND_BY_TOOL: Record<string, ToolKind> = {
+  read_file: 'read',
+  view_file: 'read',
+  list_dir: 'read',
+  write_file: 'edit',
+  write_to_file: 'edit',
+  edit_file: 'edit',
+  replace_file_content: 'edit',
+  multi_replace_file_content: 'edit',
+  sed_file: 'edit',
+  notebook_edit: 'edit',
+  grep_search: 'search',
+  find_by_name: 'search',
+  run_command: 'command',
+  send_command_input: 'command',
+};
+
+/**
+ * Turns the lines of `agy`'s `stream-json` output into progress events. Returns the function to
+ * feed each line to. Every tool step arrives twice, as ACTIVE and as DONE: an edit is reported
+ * when it is done, so "edited x" is true, and other tools the first time they are seen.
+ */
+export function antigravityEventReader(
+  cwd: string,
+  onEvent: (event: AgentEvent) => void,
+): (line: string) => void {
+  const reported = new Set<unknown>();
+  return (text) => {
+    const line = parseJsonLine(text);
+    const step = line?.event === 'step_update' ? asRecord(line.step_update) : undefined;
+    if (!step || step.step_type !== 'tool') return;
+    const info = asRecord(step.tool_info);
+    const tool = firstString(step, ['tool_name']) ?? firstString(info, ['name']) ?? 'a tool';
+    const kind = KIND_BY_TOOL[tool] ?? 'tool';
+    if (kind === 'edit' && step.state !== 'DONE') return;
+    if (reported.has(step.step_index)) return;
+    reported.add(step.step_index);
+
+    // `Path` is the only parameter name known for sure. A search's path says where it looked,
+    // not what for, so searches and commands are reported without a target.
+    const path = firstString(asRecord(info?.parameters), ['Path']);
+    const hasTarget = path !== undefined && kind !== 'search' && kind !== 'command';
+    onEvent(toolEvent(kind, tool, hasTarget ? displayPath(path, cwd) : undefined));
+  };
+}
+
 export interface AntigravityOutput {
   text: string;
   warning?: string;
 }
 
+function readResult(parsed: AgyResult): AntigravityOutput {
+  const text = typeof parsed.response === 'string' ? parsed.response.trim() : '';
+  if (!parsed.status || parsed.status === 'SUCCESS') return { text };
+  // agy sometimes reports ERROR after finishing the work. Keep a real reply, flag the status.
+  if (text !== '') return { text, warning: `Antigravity reported status ${parsed.status}` };
+  throw new AdapterError(`Antigravity reported status ${parsed.status}`);
+}
+
+/**
+ * Finds the reply in `agy`'s output: the `result` line of a `stream-json` stream, a single JSON
+ * object as `--output-format json` prints, or plain text.
+ */
 export function parseAntigravityOutput(stdout: string): AntigravityOutput {
   const trimmed = stdout.trim();
+  const events = trimmed
+    .split('\n')
+    .map(parseJsonLine)
+    .filter((line) => line !== undefined)
+    .filter((line) => typeof line.event === 'string');
+  const result = asRecord(events.findLast((line) => line.event === 'result')?.result);
+  if (result) return readResult(result as AgyResult);
+  if (events.length > 0) {
+    throw new AdapterError('agy stopped before giving a result', trimmed.slice(-2000));
+  }
+
   // Under a terminal the CLI may print other text first, so read from the first '{'.
   const start = trimmed.indexOf('{');
   if (start !== -1) {
-    let parsed: AgyResult | undefined;
     try {
-      parsed = JSON.parse(trimmed.slice(start)) as AgyResult;
-    } catch {
+      return readResult(JSON.parse(trimmed.slice(start)) as AgyResult);
+    } catch (error) {
+      if (error instanceof AdapterError) throw error;
       // Not JSON after all; use the raw text below.
-    }
-    if (parsed) {
-      const text = typeof parsed.response === 'string' ? parsed.response.trim() : '';
-      if (!parsed.status || parsed.status === 'SUCCESS') return { text };
-      // agy sometimes reports ERROR after finishing the work. Keep a real reply, flag the status.
-      if (text !== '') return { text, warning: `Antigravity reported status ${parsed.status}` };
-      throw new AdapterError(`Antigravity reported status ${parsed.status}`);
     }
   }
   return { text: trimmed };
@@ -80,9 +147,12 @@ export class AntigravityAdapter implements AgentAdapter {
       signal: task.signal,
       timeoutMs: task.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     };
-    let result: ProcessResult = await runProcess(options);
+    const reader = task.onEvent && antigravityEventReader(task.workingDirectory, task.onEvent);
+    let result: ProcessResult = await runProcess({ ...options, onStdoutLine: reader });
     if (result.exitCode === 0 && result.stdout.trim() === '') {
       result = await runUnderPty(options);
+      // A terminal's output is only clean once it is complete, so progress is reported late.
+      if (reader) result.stdout.split('\n').forEach(reader);
     }
     if (result.exitCode !== 0) {
       const details = (result.stderr || result.stdout).slice(0, 2000);

@@ -1,10 +1,22 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { AdapterError, CancelledError, DEFAULT_TIMEOUT_MS } from '@symposium/adapters';
+import {
+  AdapterError,
+  CancelledError,
+  DEFAULT_TIMEOUT_MS,
+  type AgentEvent,
+} from '@symposium/adapters';
 import { postMessage, postNotice } from '../chat.js';
 import type { AppContext } from '../context.js';
 import { appendMemory, memoryForPrompt, readMemory } from '../memory.js';
 import { projectForPrompt, readProjectFile } from '../project-file.js';
-import type { Agent, Group, HireRequest, Message, TeamStatus } from '../protocol.js';
+import type {
+  Agent,
+  Group,
+  HireRequest,
+  Message,
+  TeamStatus,
+  WorktreeChanges,
+} from '../protocol.js';
 import { loadRoleText } from '../roles.js';
 import { getAgent, listAgents } from '../store/agents.js';
 import { logEvent } from '../store/events.js';
@@ -13,6 +25,7 @@ import { listMessages } from '../store/messages.js';
 import { validateHire } from '../team.js';
 import { parseCommand } from './commands.js';
 import { parseMentions } from './mentions.js';
+import { PacedTask } from './paced.js';
 import { buildPrompt, buildSystemPrompt, LEAD_HISTORY } from './prompt.js';
 import { parseReplyBlocks } from './reply-blocks.js';
 
@@ -29,6 +42,15 @@ export interface RunnerHooks {
   afterTurn(group: Group, agent: Agent, workspace: Workspace, reply: Message): Promise<void>;
   /** Called once the whole group has been idle for a while, to let the scribe update project.md. */
   onIdle(group: Group, signal: AbortSignal): Promise<void>;
+  /**
+   * The agent's uncommitted work, for the live view of a turn in progress. Undefined when the
+   * agent has no worktree of its own. Must not change anything.
+   */
+  liveChanges?(
+    group: Group,
+    agent: Agent,
+    workspace: Workspace,
+  ): Promise<WorktreeChanges | undefined>;
 }
 
 /** A message waiting for an agent's next turn. */
@@ -81,9 +103,15 @@ interface GroupWork {
 export interface RunnerOptions {
   /** How long the group must stay idle before the scribe updates project.md. */
   scribeDelayMs?: number;
+  /** The shortest time between two pushes of one agent's live diff. */
+  liveChangesIntervalMs?: number;
 }
 
+/** The audit log's name for one tool call inside a turn. */
+export const AGENT_TOOL_EVENT = 'agent.tool';
+
 export const DEFAULT_SCRIBE_DELAY_MS = 30_000;
+export const DEFAULT_LIVE_CHANGES_INTERVAL_MS = 1000;
 
 /**
  * Runs the team's turns. The engine, not a model, decides who works when and when to stop:
@@ -100,6 +128,7 @@ export const DEFAULT_SCRIBE_DELAY_MS = 30_000;
 export class TeamRunner {
   private readonly groups = new Map<string, GroupWork>();
   private readonly scribeDelayMs: number;
+  private readonly liveChangesIntervalMs: number;
   private nextSeq = 1;
 
   constructor(
@@ -108,6 +137,7 @@ export class TeamRunner {
     options: RunnerOptions = {},
   ) {
     this.scribeDelayMs = options.scribeDelayMs ?? DEFAULT_SCRIBE_DELAY_MS;
+    this.liveChangesIntervalMs = options.liveChangesIntervalMs ?? DEFAULT_LIVE_CHANGES_INTERVAL_MS;
   }
 
   /**
@@ -562,8 +592,11 @@ export class TeamRunner {
     const { ctx } = this;
     ctx.hub.broadcast(group.id, { type: 'agent.activity', agentId: agent.id, activity: 'working' });
     const started = Date.now();
+    let liveChanges: PacedTask | undefined;
     try {
       const workspace = await this.hooks.prepareWorkspace(group, agent);
+      liveChanges = this.watchChanges(group, agent, workspace);
+      const watching = liveChanges;
       // The engine, not the model, decides what the agent may touch.
       const { files: access, effort, commands } = agent.settings;
       const promptInput = {
@@ -591,6 +624,12 @@ export class TeamRunner {
         access,
         effort,
         commands,
+        onEvent: (event) => {
+          this.onAgentEvent(group, agent, event);
+          // Any tool call may have changed files: providers add tools this code has no name
+          // for. Looking again is cheap, and it is paced.
+          if (event.kind !== 'text') watching?.request();
+        },
         signal,
         timeoutMs: DEFAULT_TIMEOUT_MS,
       });
@@ -654,8 +693,44 @@ export class TeamRunner {
       });
       return undefined;
     } finally {
+      // One last look, after the commit: the live view empties, or shows what a turn that was
+      // stopped or failed left behind.
+      await liveChanges?.finish();
       ctx.hub.broadcast(group.id, { type: 'agent.activity', agentId: agent.id, activity: 'idle' });
     }
+  }
+
+  /**
+   * Shows the team what an agent is doing and records it. Every tool call goes into the audit
+   * log; what the agent says along the way is only shown.
+   */
+  private onAgentEvent(group: Group, agent: Agent, event: AgentEvent): void {
+    try {
+      const at = Date.now();
+      this.ctx.hub.broadcast(group.id, {
+        type: 'agent.progress',
+        progress: { agentId: agent.id, at, event },
+      });
+      if (event.kind === 'text') return;
+      logEvent(
+        this.ctx.db,
+        { groupId: group.id, agentId: agent.id, kind: AGENT_TOOL_EVENT, detail: { ...event } },
+        at,
+      );
+    } catch {
+      // Reporting progress must never break the turn it reports on.
+    }
+  }
+
+  /** Pushes the agent's uncommitted diff to the UI when asked, at a steady pace. */
+  private watchChanges(group: Group, agent: Agent, workspace: Workspace): PacedTask | undefined {
+    const { liveChanges } = this.hooks;
+    if (!liveChanges || !workspace.branch) return undefined;
+    return new PacedTask(async () => {
+      const changes = await liveChanges(group, agent, workspace);
+      if (!changes) return;
+      this.ctx.hub.broadcast(group.id, { type: 'worktree.changed', agentId: agent.id, changes });
+    }, this.liveChangesIntervalMs);
   }
 
   private postHireProposals(group: Group, lead: Agent, proposals: unknown[]): void {

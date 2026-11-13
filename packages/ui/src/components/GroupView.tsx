@@ -1,9 +1,10 @@
 import type { Group, UpdateGroupRequest } from '@symposium/engine/protocol';
 import { useState } from 'react';
-import { api } from '../api.ts';
+import { api, type CodeLocation } from '../api.ts';
 import type { Catalog } from '../App.tsx';
-import { activeAgents, queuedFor, workingAgents } from '../group-state.ts';
+import { activeAgents, editingAgents, queuedFor, workingAgents } from '../group-state.ts';
 import { useGroup } from '../use-group.ts';
+import { CodePanel, type CodeView } from './CodePanel.tsx';
 import { Composer } from './Composer.tsx';
 import { MessageList } from './MessageList.tsx';
 import { ProjectPanel } from './ProjectPanel.tsx';
@@ -21,7 +22,11 @@ interface GroupViewProps {
 
 export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
   const { state, status, loadError, send } = useGroup(group.id, onGroupChanged);
-  const [panel, setPanel] = useState<'team' | 'project'>('team');
+  const [panel, setPanel] = useState<'team' | 'project' | 'code'>('team');
+  const [code, setCode] = useState<{ where: CodeLocation; view: CodeView }>({
+    where: 'project',
+    view: 'files',
+  });
   const [actionError, setActionError] = useState<string>();
   const team = activeAgents(state);
   const working = workingAgents(state);
@@ -107,7 +112,7 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
         </div>
       </header>
 
-      <div className="group-body">
+      <div className={panel === 'code' ? 'group-body group-body-wide' : 'group-body'}>
         <section className="chat-column">
           {loadError && <p className="banner-error">Could not load the group: {loadError}</p>}
           {actionError && (
@@ -171,17 +176,42 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
             >
               project.md
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panel === 'code'}
+              className={panel === 'code' ? 'tab tab-active' : 'tab'}
+              onClick={() => setPanel('code')}
+            >
+              Code
+            </button>
           </div>
-          {panel === 'team' ? (
+          {panel === 'team' && (
             <TeamPanel
               group={group}
               team={team}
               activity={state.activity}
               queues={state.queues}
+              progress={state.progress}
+              liveChanges={state.liveChanges}
+              onShowChanges={(agent) => {
+                setCode({ where: agent.id, view: 'changes' });
+                setPanel('code');
+              }}
               catalog={catalog}
             />
-          ) : (
-            <ProjectPanel group={group} version={state.projectVersion} />
+          )}
+          {panel === 'project' && <ProjectPanel group={group} version={state.projectVersion} />}
+          {panel === 'code' && (
+            <CodePanel
+              group={group}
+              editors={editingAgents(state)}
+              liveChanges={state.liveChanges}
+              filesVersion={state.filesVersion}
+              where={code.where}
+              view={code.view}
+              onChoose={(where, view) => setCode({ where, view })}
+            />
           )}
         </aside>
       </div>

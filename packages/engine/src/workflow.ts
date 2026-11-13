@@ -7,6 +7,7 @@ import {
   ensureWorktree,
   mergeWork,
   pendingDiff,
+  uncommittedChanges,
 } from './git/workspaces.js';
 import type { Agent, Group, Message } from './protocol.js';
 import type { RunnerHooks, Workspace } from './routing/runner.js';
@@ -102,6 +103,9 @@ export function createRunnerHooks(ctx: AppContext): RunnerHooks {
     onIdle: async (group, signal) => {
       await updateProjectFile(ctx, group, signal);
     },
+    // Only looks, so it does not wait in the queue behind the git steps above.
+    liveChanges: async (_group, _agent, workspace) =>
+      workspace.branch ? uncommittedChanges(workspace.cwd) : undefined,
   };
 }
 

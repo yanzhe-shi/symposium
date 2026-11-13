@@ -1,7 +1,14 @@
-import type { Agent, AgentActivity, Group } from '@symposium/engine/protocol';
+import type {
+  Agent,
+  AgentActivity,
+  AgentProgress,
+  Group,
+  WorktreeChanges,
+} from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { api } from '../api.ts';
 import type { Catalog } from '../App.tsx';
+import { activityLine } from '../group-state.ts';
 import { AgentForm } from './AgentForm.tsx';
 import { MemoryDialog } from './MemoryDialog.tsx';
 
@@ -11,7 +18,42 @@ interface TeamPanelProps {
   activity: Record<string, AgentActivity>;
   /** Per agent, the ids of messages waiting in its inbox. */
   queues: Record<string, number[]>;
+  /** Per agent, what it did lately, oldest first. */
+  progress: Record<string, AgentProgress[]>;
+  /** Per agent, the uncommitted work in its worktree. */
+  liveChanges: Record<string, WorktreeChanges>;
+  /** Opens the Code tab on an agent's uncommitted changes. */
+  onShowChanges: (agent: Agent) => void;
   catalog: Catalog;
+}
+
+const TIMELINE_LENGTH = 40;
+const clockFormat = new Intl.DateTimeFormat(undefined, {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+/** What an agent did lately, newest first: tool calls, refusals and things it said mid-turn. */
+function ActivityTimeline({ progress }: { progress: AgentProgress[] }) {
+  return (
+    <ol className="timeline small" aria-label="Activity">
+      {progress
+        .slice(-TIMELINE_LENGTH)
+        .reverse()
+        .map((entry, index) => (
+          <li
+            key={`${entry.at}-${index}`}
+            className={`timeline-entry timeline-${entry.event.kind}`}
+          >
+            <time className="muted" dateTime={new Date(entry.at).toISOString()}>
+              {clockFormat.format(entry.at)}
+            </time>
+            <span title={entry.event.target}>{entry.event.summary}</span>
+          </li>
+        ))}
+    </ol>
+  );
 }
 
 /** "Working", "Idle", "Working · 2 queued" or "1 queued" (waiting for a free slot). */
@@ -29,7 +71,17 @@ export function settingsSummary(agent: Agent, roleFiles: string | undefined): st
   return parts;
 }
 
-export function TeamPanel({ group, team, activity, queues, catalog }: TeamPanelProps) {
+export function TeamPanel({
+  group,
+  team,
+  activity,
+  queues,
+  progress,
+  liveChanges,
+  onShowChanges,
+  catalog,
+}: TeamPanelProps) {
+  const [timelineOf, setTimelineOf] = useState<string>();
   const [hiring, setHiring] = useState(false);
   const [editing, setEditing] = useState<Agent>();
   const [memoryOf, setMemoryOf] = useState<Agent>();
@@ -82,6 +134,10 @@ export function TeamPanel({ group, team, activity, queues, catalog }: TeamPanelP
           const working = activity[agent.id] === 'working';
           const queued = queues[agent.id]?.length ?? 0;
           const busy = working || queued > 0;
+          const did = progress[agent.id] ?? [];
+          const lately = activityLine(did);
+          const changed = liveChanges[agent.id]?.files.length ?? 0;
+          const showTimeline = timelineOf === agent.id && did.length > 0;
           return (
             <li key={agent.id} className="agent-card">
               <div className="agent-card-top">
@@ -105,6 +161,22 @@ export function TeamPanel({ group, team, activity, queues, catalog }: TeamPanelP
               {agent.instructions && (
                 <div className="small agent-instructions">{agent.instructions}</div>
               )}
+              {lately && !showTimeline && (
+                <div className="small agent-activity" title={lately}>
+                  {lately}
+                </div>
+              )}
+              {showTimeline && <ActivityTimeline progress={did} />}
+              {changed > 0 && (
+                <button
+                  type="button"
+                  className="link-button small"
+                  title={`See what ${agent.name} has changed so far in this turn`}
+                  onClick={() => onShowChanges(agent)}
+                >
+                  {changed} file{changed === 1 ? '' : 's'} changed, not committed yet
+                </button>
+              )}
               <div className="agent-actions">
                 {busy && (
                   <button
@@ -114,6 +186,16 @@ export function TeamPanel({ group, team, activity, queues, catalog }: TeamPanelP
                     onClick={() => void stop(agent)}
                   >
                     Stop
+                  </button>
+                )}
+                {did.length > 0 && (
+                  <button
+                    type="button"
+                    className="link-button"
+                    aria-expanded={showTimeline}
+                    onClick={() => setTimelineOf(showTimeline ? undefined : agent.id)}
+                  >
+                    {showTimeline ? 'Hide activity' : 'Activity'}
                   </button>
                 )}
                 <button type="button" className="link-button" onClick={() => setEditing(agent)}>

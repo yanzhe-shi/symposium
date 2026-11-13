@@ -4,15 +4,26 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AntigravityAdapter, antigravityArgs, parseAntigravityOutput } from './antigravity.js';
-import { ClaudeCodeAdapter, claudeCodeArgs, parseClaudeOutput } from './claude-code.js';
+import {
+  AntigravityAdapter,
+  antigravityArgs,
+  antigravityEventReader,
+  parseAntigravityOutput,
+} from './antigravity.js';
+import {
+  ClaudeCodeAdapter,
+  claudeCodeArgs,
+  claudeEventReader,
+  parseClaudeOutput,
+} from './claude-code.js';
+import { displayPath, toolEvent } from './events.js';
 import { changedBetween, parsePorcelainZ, reportingFileChanges } from './file-changes.js';
 import { MockAdapter } from './mock.js';
 import { listModels, parseAgyModels } from './models.js';
 import { OpenAICompatibleAdapter } from './openai-compatible.js';
 import { cleanTerminalOutput, commandExists, runProcess } from './process.js';
 import { createAdapter, PROVIDERS } from './registry.js';
-import { AdapterError, CancelledError, type AgentTask } from './types.js';
+import { AdapterError, CancelledError, type AgentEvent, type AgentTask } from './types.js';
 
 let dir: string;
 beforeEach(() => {
@@ -41,6 +52,19 @@ function fakeCli(name: string, body: string): string {
   writeFileSync(path, `#!/bin/sh\n${body}\n`);
   chmodSync(path, 0o755);
   return path;
+}
+
+/** A fake CLI that prints the given objects as JSON lines, the way a streaming CLI does. */
+function streamingCli(name: string, lines: unknown[]): string {
+  const file = join(dir, `${name}-stream.jsonl`);
+  writeFileSync(file, lines.map((line) => JSON.stringify(line)).join('\n') + '\n');
+  return fakeCli(name, `cat > /dev/null; cat '${file}'`);
+}
+
+/** A listener for `task.onEvent` that keeps the events it is given. */
+function collectEvents(): { events: AgentEvent[]; onEvent: (event: AgentEvent) => void } {
+  const events: AgentEvent[] = [];
+  return { events, onEvent: (event) => events.push(event) };
 }
 
 describe('runProcess', () => {
@@ -76,6 +100,24 @@ describe('runProcess', () => {
     await expect(
       runProcess({ command: 'sleep', args: ['10'], cwd: dir, timeoutMs: 100 }),
     ).rejects.toThrow(/timed out/);
+  });
+
+  it('hands over each line of output as it arrives, even when a line comes in pieces', async () => {
+    const lines: string[] = [];
+    const arrivals: number[] = [];
+    const result = await runProcess({
+      command: 'sh',
+      args: ['-c', `printf 'one\\ntw'; sleep 0.2; printf 'o\\r\\nthr'; sleep 0.1; printf 'ee'`],
+      cwd: dir,
+      onStdoutLine: (line) => {
+        lines.push(line);
+        arrivals.push(Date.now());
+      },
+    });
+    expect(lines).toEqual(['one', 'two', 'three']);
+    expect(result.stdout).toBe('one\ntwo\r\nthree');
+    // The first line was handed over while the process was still running.
+    expect(arrivals[1]! - arrivals[0]!).toBeGreaterThan(100);
   });
 
   it('finds commands on PATH', async () => {
@@ -120,6 +162,16 @@ describe('MockAdapter', () => {
         task({ access: 'edit' }),
       ),
     ).rejects.toThrow(/outside the working directory/);
+  });
+
+  it('reports scripted progress events', async () => {
+    const { events, onEvent } = collectEvents();
+    const scripted = [toolEvent('read', 'Read', 'src/cart.ts'), toolEvent('edit', 'Edit', 'a.ts')];
+    const mock = new MockAdapter([{ text: 'done', events: scripted }]);
+    await mock.run(task({ onEvent }));
+    expect(events.map((event) => event.summary)).toEqual(['read src/cart.ts', 'edited a.ts']);
+    // A task without a listener still works.
+    expect((await mock.run(task())).text).toBe('done');
   });
 
   it('fails a turn on request and can be cancelled', async () => {
@@ -189,6 +241,123 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"Hello from
     expect(args).toEqual(expect.arrayContaining(['-p', '--model', 'haiku', 'You are Ada.']));
   });
 
+  it('asks for a stream and reports what the agent does as it goes', async () => {
+    const args = claudeCodeArgs(task());
+    expect(
+      args.slice(args.indexOf('--output-format'), args.indexOf('--output-format') + 3),
+    ).toEqual(['--output-format', 'stream-json', '--verbose']);
+
+    const assistant = (...content: unknown[]) => ({ type: 'assistant', message: { content } });
+    const toolResult = (id: string, isError = false) => ({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError }] },
+    });
+    const use = (id: string, name: string, input: unknown) => ({
+      type: 'tool_use',
+      id,
+      name,
+      input,
+    });
+    const cli = streamingCli('claude', [
+      { type: 'system', subtype: 'init', cwd: dir },
+      assistant({ type: 'thinking', thinking: 'hmm' }),
+      assistant({ type: 'text', text: 'Let me look at\nthe cart.' }),
+      assistant(use('t1', 'Read', { file_path: join(dir, 'src/cart.ts') })),
+      toolResult('t1'),
+      { type: 'rate_limit_event' },
+      assistant(use('t2', 'Glob', { pattern: '**/*.ts', path: dir })),
+      toolResult('t2'),
+      assistant(use('t3', 'Edit', { file_path: join(dir, 'src/cart.ts') })),
+      toolResult('t3'),
+      assistant(use('t4', 'Write', { file_path: '/etc/passwd' })),
+      {
+        type: 'system',
+        subtype: 'permission_denied',
+        tool_name: 'Write',
+        decision_reason: 'outside the working directory',
+      },
+      toolResult('t4', true),
+      assistant(use('t5', 'WebFetch', { url: 'https://example.com' })),
+      toolResult('t5'),
+      assistant({ type: 'text', text: 'All done.' }),
+      {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        result: 'All done.',
+        total_cost_usd: 0.01,
+      },
+    ]);
+    const { events, onEvent } = collectEvents();
+    const reply = await new ClaudeCodeAdapter(cli).run(task({ access: 'edit', onEvent }));
+
+    expect(reply).toEqual({ text: 'All done.', costUsd: 0.01, changedFiles: [] });
+    expect(events.map((event) => `${event.kind}: ${event.summary}`)).toEqual([
+      'text: Let me look at the cart.',
+      'read: read src/cart.ts',
+      'search: searched for **/*.ts',
+      'edit: edited src/cart.ts',
+      'denied: was refused Write: outside the working directory',
+      'tool: used WebFetch on https://example.com',
+    ]);
+    expect(events[1]).toEqual({
+      kind: 'read',
+      tool: 'Read',
+      target: 'src/cart.ts',
+      summary: 'read src/cart.ts',
+    });
+  });
+
+  it('reports an edit only once it has happened', () => {
+    const { events, onEvent } = collectEvents();
+    const read = claudeEventReader('/work', onEvent);
+    const edit = { type: 'tool_use', id: 'e1', name: 'Edit', input: { file_path: '/work/a.ts' } };
+    read(JSON.stringify({ type: 'assistant', message: { content: [edit] } }));
+    expect(events).toEqual([]);
+    read('not json at all');
+    read(
+      JSON.stringify({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'e1' }] },
+      }),
+    );
+    expect(events.map((event) => event.summary)).toEqual(['edited a.ts']);
+  });
+
+  it('shows paths relative to the working folder, and others in full', () => {
+    expect(displayPath('/work/src/a.ts', '/work')).toBe('src/a.ts');
+    expect(displayPath('/work', '/work')).toBe('.');
+    expect(displayPath('/elsewhere/a.ts', '/work')).toBe('/elsewhere/a.ts');
+    expect(displayPath('src/a.ts', '/work')).toBe('src/a.ts');
+    expect(toolEvent('search', 'grep_search').summary).toBe('searched the files');
+    expect(toolEvent('tool', 'WebSearch').summary).toBe('used WebSearch');
+
+    // A very long target is cut in the middle for the summary and kept whole as the target.
+    const long = `/tmp/${'deep/'.repeat(30)}placeholder.txt`;
+    const event = toolEvent('edit', 'Write', long);
+    expect(event.target).toBe(long);
+    expect(event.summary).toMatch(/^edited \/tmp\/deep\/.*….*\/placeholder\.txt$/);
+    expect(event.summary.length).toBeLessThan(90);
+  });
+
+  it('finds the result in a stream, and says so when there is none', () => {
+    const stream = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"Hi"}]}}',
+      '{"type":"result","subtype":"success","is_error":false,"result":"Hi","total_cost_usd":0.5}',
+      '',
+    ].join('\n');
+    expect(parseClaudeOutput(stream)).toEqual({ text: 'Hi', costUsd: 0.5 });
+    expect(() =>
+      parseClaudeOutput('{"type":"system","subtype":"init"}\n{"type":"user"}\n'),
+    ).toThrow(/stopped before giving a result/);
+    expect(() =>
+      parseClaudeOutput(
+        '{"type":"system"}\n{"type":"result","subtype":"error_during_execution","is_error":true}',
+      ),
+    ).toThrow(/error_during_execution/);
+  });
+
   it('reports errors from Claude Code', () => {
     expect(() =>
       parseClaudeOutput('{"is_error":true,"subtype":"error_max_turns","result":"x"}'),
@@ -256,6 +425,74 @@ describe('AntigravityAdapter', () => {
     expect((failure as AdapterError).details).toContain('not supported for model');
   });
 
+  it('asks for a stream and reports tool steps once each, edits when they are done', async () => {
+    expect(antigravityArgs(task())).toContain('stream-json');
+    const step = (index: number, state: string, tool: string, parameters: unknown = {}) => ({
+      event: 'step_update',
+      step_update: {
+        step_index: index,
+        state,
+        step_type: 'tool',
+        tool_name: tool,
+        tool_info: { name: tool, parameters },
+      },
+    });
+    const file = join(dir, 'src/cart.ts');
+    const cli = streamingCli('agy', [
+      { event: 'init', init: { model: 'x' } },
+      step(1, 'ACTIVE', 'view_file', { Path: file }),
+      step(1, 'DONE', 'view_file', { Path: file }),
+      step(2, 'ACTIVE', 'grep_search', { Path: dir }),
+      step(2, 'DONE', 'grep_search', { Path: dir }),
+      step(3, 'ACTIVE', 'edit_file', { Path: file }),
+      step(3, 'DONE', 'edit_file', { Path: file }),
+      step(4, 'ACTIVE', 'browser_preview', { Url: 'http://localhost' }),
+      {
+        event: 'step_update',
+        step_update: {
+          step_index: 5,
+          state: 'ACTIVE',
+          step_type: 'agent_response',
+          text_delta: 'Do',
+        },
+      },
+      { event: 'result', result: { status: 'SUCCESS', response: 'Done.\n' } },
+    ]);
+    const { events, onEvent } = collectEvents();
+    const reply = await new AntigravityAdapter(cli).run(task({ access: 'edit', onEvent }));
+
+    expect(reply.text).toBe('Done.');
+    expect(events.map((event) => `${event.kind}: ${event.summary}`)).toEqual([
+      'read: read src/cart.ts',
+      'search: searched the files',
+      'edit: edited src/cart.ts',
+      'tool: used browser_preview',
+    ]);
+
+    // An edit that is still going on is not reported yet.
+    const early = collectEvents();
+    antigravityEventReader(
+      dir,
+      early.onEvent,
+    )(JSON.stringify(step(1, 'ACTIVE', 'write_file', { Path: file })));
+    expect(early.events).toEqual([]);
+  });
+
+  it('finds the result in a stream, and says so when there is none', () => {
+    const init = '{"event":"init","init":{}}';
+    expect(
+      parseAntigravityOutput(
+        `${init}\n{"event":"result","result":{"status":"SUCCESS","response":"Hi {there}"}}\n`,
+      ),
+    ).toEqual({ text: 'Hi {there}' });
+    expect(
+      parseAntigravityOutput(
+        `${init}\n{"event":"result","result":{"status":"ERROR","response":"Did it."}}`,
+      ),
+    ).toEqual({ text: 'Did it.', warning: 'Antigravity reported status ERROR' });
+    expect(() => parseAntigravityOutput(`${init}\n`)).toThrow(/stopped before giving a result/);
+  });
+
   const hasPty = existsSync('/usr/bin/python3') || existsSync('/usr/bin/script');
   it.runIf(hasPty)('falls back to a pseudo-terminal when it prints nothing to a pipe', async () => {
     // Prints only when stdout is a terminal, like `agy -p` can.
@@ -265,6 +502,20 @@ describe('AntigravityAdapter', () => {
     );
     const reply = await new AntigravityAdapter(cli).run(task());
     expect(reply.text).toBe('from a terminal');
+  });
+
+  it.runIf(hasPty)('still reports tool steps after falling back to a pseudo-terminal', async () => {
+    const lines = [
+      '{"event":"step_update","step_update":{"step_index":1,"state":"DONE","step_type":"tool","tool_name":"list_dir","tool_info":{"parameters":{"Path":"/elsewhere"}}}}',
+      '{"event":"result","result":{"status":"SUCCESS","response":"Listed."}}',
+    ];
+    const file = join(dir, 'pty-stream.jsonl');
+    writeFileSync(file, lines.join('\n') + '\n');
+    const cli = fakeCli('agy', `if [ -t 1 ]; then cat '${file}'; fi`);
+    const { events, onEvent } = collectEvents();
+    const reply = await new AntigravityAdapter(cli).run(task({ onEvent }));
+    expect(reply.text).toBe('Listed.');
+    expect(events.map((event) => event.summary)).toEqual(['read /elsewhere']);
   });
 
   it('keeps a real reply that arrives with an error status, as a warning', () => {

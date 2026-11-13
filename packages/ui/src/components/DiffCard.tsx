@@ -1,7 +1,7 @@
 import type { Agent, DiffStatus, Message, MessageMeta } from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { api } from '../api.ts';
-import { diffLineKind } from '../text-format.ts';
+import { DiffView } from './DiffView.tsx';
 
 type DiffMeta = Extract<MessageMeta, { type: 'diff' }>;
 
@@ -60,17 +60,7 @@ export function DiffCard({ groupId, message, meta, agents }: DiffCardProps) {
       <button type="button" className="link-button" onClick={() => setOpen(!open)}>
         {open ? 'Hide diff' : 'Show diff'}
       </button>
-      {open && (
-        <pre className="diff">
-          {meta.diff.split('\n').map((line, index) => (
-            <span key={index} className={`diff-line diff-${diffLineKind(line)}`}>
-              {line}
-              {'\n'}
-            </span>
-          ))}
-          {meta.truncated && <span className="diff-line muted">… diff truncated</span>}
-        </pre>
-      )}
+      {open && <DiffView diff={meta.diff} truncated={meta.truncated} />}
       {error && <p className="form-error">{error}</p>}
       {meta.status === 'pending' && (
         <div className="card-actions">

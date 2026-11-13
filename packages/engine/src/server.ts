@@ -11,6 +11,7 @@ import type { Db } from './db/database.js';
 import { localhostGuard } from './localhost-guard.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerDocumentRoutes } from './routes/documents.js';
+import { registerFileRoutes } from './routes/files.js';
 import { registerGroupRoutes } from './routes/groups.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMessageRoutes } from './routes/messages.js';
@@ -28,6 +29,8 @@ export interface ServerDeps {
   createAdapter?: AdapterFactory;
   /** How long a group must stay idle before the scribe updates project.md. */
   scribeDelayMs?: number;
+  /** The shortest time between two pushes of one agent's live diff. */
+  liveChangesIntervalMs?: number;
   logger?: FastifyServerOptions['logger'];
 }
 
@@ -56,6 +59,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   const runner = new TeamRunner(ctx, createRunnerHooks(ctx), {
     scribeDelayMs: deps.scribeDelayMs,
+    liveChangesIntervalMs: deps.liveChangesIntervalMs,
   });
   app.decorate('symposium', { ctx, runner });
   app.addHook('onClose', async () => runner.shutdown());
@@ -78,6 +82,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerMessageRoutes(app, ctx, runner);
   registerRunRoutes(app, ctx, runner);
   registerDocumentRoutes(app, ctx);
+  registerFileRoutes(app, ctx);
   registerChatSocket(app, ctx);
 
   return app;

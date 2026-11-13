@@ -1,15 +1,20 @@
-import type { Agent, Message } from '@symposium/engine/protocol';
+import type { Agent, AgentProgress, Message } from '@symposium/engine/protocol';
 import { agentStatusLabel, settingsSummary } from './components/TeamPanel.tsx';
 import { describe, expect, it } from 'vitest';
 import {
   activeAgents,
+  activityLine,
+  editingAgents,
   groupReducer,
   initialGroupState,
+  MAX_PROGRESS,
   mergeMessages,
+  mergeProgress,
   queuedCount,
   queuedFor,
   workingAgents,
 } from './group-state.ts';
+import { formatSize } from './text-format.ts';
 
 function message(id: number, body = `message ${id}`): Message {
   return {
@@ -39,6 +44,15 @@ function agent(id: string, firedAt: number | null = null): Agent {
     createdAt: 0,
     firedAt,
   };
+}
+
+function did(
+  agentId: string,
+  at: number,
+  summary: string,
+  kind: AgentProgress['event']['kind'] = 'read',
+): AgentProgress {
+  return { agentId, at, event: { kind, summary } };
 }
 
 describe('mergeMessages', () => {
@@ -140,6 +154,90 @@ describe('groupReducer', () => {
     expect(agentStatusLabel(true, 2)).toBe('Working · 2 queued');
     // Waiting for a free slot under the group's cap.
     expect(agentStatusLabel(false, 1)).toBe('1 queued');
+  });
+
+  it("builds each agent's activity timeline as its progress arrives", () => {
+    let state = groupReducer(initialGroupState, team);
+    state = groupReducer(state, { type: 'progress', progress: [did('a', 1, 'read cart.ts')] });
+    state = groupReducer(state, {
+      type: 'progress',
+      progress: [did('a', 2, 'Let me fix the total.', 'text')],
+    });
+    state = groupReducer(state, {
+      type: 'progress',
+      progress: [did('a', 3, 'edited cart.ts', 'edit')],
+    });
+    state = groupReducer(state, { type: 'progress', progress: [did('b', 3, 'read readme.md')] });
+
+    expect(state.progress.a!.map((entry) => entry.event.summary)).toEqual([
+      'read cart.ts',
+      'Let me fix the total.',
+      'edited cart.ts',
+    ]);
+    // The card shows the tool calls, not what the agent said along the way.
+    expect(activityLine(state.progress.a)).toBe('read cart.ts → edited cart.ts');
+    expect(activityLine(state.progress.b)).toBe('read readme.md');
+    expect(activityLine(undefined)).toBe('');
+    expect(activityLine([1, 2, 3, 4, 5].map((n) => did('a', n, `step ${n}`)))).toBe(
+      'step 3 → step 4 → step 5',
+    );
+  });
+
+  it('merges the logged activity with live progress, without repeats or losses', () => {
+    const live = mergeProgress({}, [did('a', 5, 'read b.ts'), did('a', 6, 'thinking', 'text')]);
+    // The log arrives after a reconnect: it overlaps, lacks the text and holds older entries.
+    const logged = [did('a', 2, 'read a.ts'), did('a', 5, 'read b.ts'), did('b', 4, 'read c.ts')];
+    const merged = mergeProgress(live, logged);
+    expect(merged.a!.map((entry) => entry.event.summary)).toEqual([
+      'read a.ts',
+      'read b.ts',
+      'thinking',
+    ]);
+    expect(merged.b).toHaveLength(1);
+    expect(mergeProgress(merged, logged)).toBe(merged);
+    expect(
+      groupReducer(
+        { ...initialGroupState, progress: merged },
+        { type: 'progress', progress: logged },
+      ).progress,
+    ).toBe(merged);
+
+    const many = Array.from({ length: MAX_PROGRESS + 20 }, (_, n) => did('a', n, `step ${n}`));
+    const capped = mergeProgress({}, many).a!;
+    expect(capped).toHaveLength(MAX_PROGRESS);
+    expect(capped.at(-1)!.event.summary).toBe(`step ${MAX_PROGRESS + 19}`);
+  });
+
+  it("keeps each agent's uncommitted changes and tells the Code tab to reload", () => {
+    let state = groupReducer(initialGroupState, team);
+    const changes = { files: ['cart.ts'], diff: '+x', truncated: false };
+    state = groupReducer(state, { type: 'changes', agentId: 'a', changes });
+    expect(state.liveChanges).toEqual({ a: changes });
+    expect(state.filesVersion).toBe(1);
+
+    state = groupReducer(state, {
+      type: 'changes',
+      agentId: 'a',
+      changes: { files: [], diff: '', truncated: false },
+    });
+    expect(state.liveChanges.a!.files).toEqual([]);
+    state = groupReducer(state, { type: 'filesChanged' });
+    expect(state.filesVersion).toBe(3);
+  });
+
+  it('offers a worktree to browse only for agents who can edit and are still on the team', () => {
+    const reader = { ...agent('r'), settings: { ...agent('r').settings, files: 'read' as const } };
+    const state = groupReducer(initialGroupState, {
+      type: 'agentsLoaded',
+      agents: [agent('a'), reader, agent('old', 5)],
+    });
+    expect(editingAgents(state).map((a) => a.id)).toEqual(['a']);
+  });
+
+  it('formats file sizes', () => {
+    expect(formatSize(812)).toBe('812 B');
+    expect(formatSize(4300)).toBe('4.2 KB');
+    expect(formatSize(1_400_000)).toBe('1.3 MB');
   });
 
   it('counts project.md updates and resets', () => {

@@ -164,6 +164,60 @@ export interface TeamStatus {
   agents: AgentStatus[];
 }
 
+/** Mirrors the adapters package: what an agent did part-way through a turn. */
+export type AgentEventKind = 'text' | 'read' | 'edit' | 'search' | 'command' | 'tool' | 'denied';
+
+export interface AgentEvent {
+  kind: AgentEventKind;
+  /** The provider's name for the tool, such as `Read` or `write_file`. */
+  tool?: string;
+  /** What the tool was used on: a path relative to the agent's folder, a pattern or a command. */
+  target?: string;
+  /** One line for the activity timeline, such as "read src/cart.ts". */
+  summary: string;
+}
+
+/** One entry in an agent's activity timeline. */
+export interface AgentProgress {
+  agentId: string;
+  /** When it happened, in milliseconds. */
+  at: number;
+  event: AgentEvent;
+}
+
+/** A worktree's uncommitted work: what an agent has changed so far in the turn it is on. */
+export interface WorktreeChanges {
+  files: string[];
+  diff: string;
+  truncated: boolean;
+}
+
+/** One entry of a folder listing in the Code tab. */
+export interface FileEntry {
+  name: string;
+  type: 'dir' | 'file';
+  /** Bytes, for files. */
+  size: number;
+}
+
+/** Answer of `GET /api/groups/:id/files`. */
+export interface FolderListing {
+  /** Path inside the project folder or worktree, with `/` separators. Empty for the top. */
+  path: string;
+  entries: FileEntry[];
+  /** True when the folder has more entries than are listed. */
+  truncated: boolean;
+}
+
+/** Answer of `GET /api/groups/:id/file`. */
+export interface FileContent {
+  path: string;
+  size: number;
+  /** Null when the file is not shown. `skipped` says why. */
+  content: string | null;
+  skipped?: 'binary' | 'too-large';
+}
+
 /** Events the engine pushes to the UI over the WebSocket, per group. */
 export type ServerEvent =
   | { type: 'message.created'; message: Message }
@@ -176,6 +230,10 @@ export type ServerEvent =
   /** A waiting message was handed to the agent, whose turn on it has started. */
   | { type: 'message.delivered'; messageId: number; agentId: string }
   | { type: 'run.status'; running: boolean }
+  /** Something an agent did during its turn: a tool call, or something it said along the way. */
+  | { type: 'agent.progress'; progress: AgentProgress }
+  /** An agent's uncommitted work changed. Empty once its turn's work is committed. */
+  | { type: 'worktree.changed'; agentId: string; changes: WorktreeChanges }
   | { type: 'project.updated' };
 
 export interface CreateMessageRequest {

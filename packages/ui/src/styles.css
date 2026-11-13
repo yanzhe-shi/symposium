@@ -315,6 +315,11 @@ label select {
   min-height: 0;
 }
 
+/* The Code tab needs room for a file tree and a file side by side. */
+.group-body-wide {
+  grid-template-columns: minmax(320px, 1fr) minmax(480px, 58%);
+}
+
 .chat-column {
   display: flex;
   flex-direction: column;
@@ -755,4 +760,220 @@ label select {
 
 .dialog > * + * {
   margin-top: 0.75rem;
+}
+
+/* Activity on agent cards */
+
+.agent-activity {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.timeline {
+  max-height: 220px;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.timeline-entry {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+  overflow-wrap: anywhere;
+}
+
+.timeline-entry time {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-text {
+  font-style: italic;
+  color: var(--muted);
+}
+
+.timeline-edit {
+  font-weight: 600;
+}
+
+.timeline-denied {
+  color: var(--warning);
+}
+
+/* Code tab */
+
+.code-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.code-panel p {
+  margin: 0;
+}
+
+.code-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.code-toolbar select {
+  flex: 1;
+  min-width: 0;
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segment {
+  padding: 0.15rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--surface);
+  border-radius: 0;
+}
+
+.segment-active {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.file-browser {
+  display: grid;
+  grid-template-columns: minmax(140px, 34%) 1fr;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.file-tree-pane,
+.file-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.file-tree-pane {
+  padding: 0.3rem 0;
+}
+
+.file-tree-pane > p,
+.file-pane > p {
+  padding: 0.5rem 0.75rem;
+}
+
+.file-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tree-item {
+  display: block;
+  width: 100%;
+  padding: 0.1rem 0.4rem;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border-radius: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-item:hover {
+  background: var(--surface-2);
+}
+
+.tree-item-open {
+  background: var(--human-bg);
+}
+
+.tree-icon {
+  display: inline-block;
+  width: 0.9rem;
+  color: var(--muted);
+}
+
+.tree-note {
+  padding: 0.1rem 0.75rem;
+}
+
+.file-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.file-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.file-view {
+  flex: 1;
+  margin: 0;
+  padding: 0.4rem 0;
+  overflow: auto;
+  counter-reset: line;
+}
+
+.file-line {
+  display: block;
+  padding-right: 0.75rem;
+  white-space: pre;
+}
+
+.file-line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3.2em;
+  margin-right: 0.9em;
+  text-align: right;
+  color: var(--muted);
+  user-select: none;
+}
+
+.live-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.live-changes .diff {
+  max-height: none;
+  margin: 0;
+}
+
+.changed-files {
+  margin: 0;
+  padding-left: 1.2rem;
 }

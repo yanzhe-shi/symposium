@@ -1,4 +1,4 @@
-import type { Group } from '@symposium/engine/protocol';
+import type { Agent, Group } from '@symposium/engine/protocol';
 import { useCallback, useEffect, useEffectEvent, useReducer, useState } from 'react';
 import { api, connectGroup, type ConnectionStatus } from './api.ts';
 import { groupReducer, initialGroupState, type GroupState } from './group-state.ts';
@@ -39,8 +39,29 @@ export function useGroup(groupId: string, onGroupChanged: (group: Group) => void
         dispatch({ type: 'messagesReceived', messages });
         dispatch({ type: 'statusLoaded', status: run });
         setLoadError(undefined);
+        void loadLiveView(agents);
       } catch (error) {
         if (active) setLoadError(error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    // What agents did lately and what they have changed but not committed. The chat works
+    // without these, so a failure here is not an error worth showing.
+    async function loadLiveView(agents: Agent[]): Promise<void> {
+      void api
+        .activity(groupId)
+        .then((progress) => {
+          if (active) dispatch({ type: 'progress', progress });
+        })
+        .catch(() => undefined);
+      for (const agent of agents) {
+        if (agent.firedAt !== null || agent.settings.files !== 'edit') continue;
+        void api
+          .changes(groupId, agent.id)
+          .then((changes) => {
+            if (active) dispatch({ type: 'changes', agentId: agent.id, changes });
+          })
+          .catch(() => undefined);
       }
     }
 
@@ -54,8 +75,18 @@ export function useGroup(groupId: string, onGroupChanged: (group: Group) => void
         if (!active) return;
         switch (event.type) {
           case 'message.created':
+            dispatch({ type: 'messagesReceived', messages: [event.message] });
+            break;
           case 'message.updated':
             dispatch({ type: 'messagesReceived', messages: [event.message] });
+            // A merge or a discard changes files on disk.
+            if (event.message.meta?.type === 'diff') dispatch({ type: 'filesChanged' });
+            break;
+          case 'agent.progress':
+            dispatch({ type: 'progress', progress: [event.progress] });
+            break;
+          case 'worktree.changed':
+            dispatch({ type: 'changes', agentId: event.agentId, changes: event.changes });
             break;
           case 'agents.changed':
             void api.agents(groupId).then((agents) => {

@@ -19,7 +19,11 @@ export class GitError extends Error {
 const MAX_BUFFER = 50 * 1024 * 1024;
 
 /** Runs git in `cwd`. Never prompts. Resolves with the exit code instead of throwing. */
-export function gitRaw(cwd: string, args: string[]): Promise<GitResult> {
+export function gitRaw(
+  cwd: string,
+  args: string[],
+  options: { env?: Record<string, string> } = {},
+): Promise<GitResult> {
   return new Promise((resolve) => {
     execFile(
       'git',
@@ -27,7 +31,7 @@ export function gitRaw(cwd: string, args: string[]): Promise<GitResult> {
       {
         cwd,
         maxBuffer: MAX_BUFFER,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', ...options.env },
       },
       (error, stdout, stderr) => {
         const code = error ? (typeof error.code === 'number' ? error.code : 1) : 0;

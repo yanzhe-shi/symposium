@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { conflict } from '../errors.js';
-import type { Agent, Group } from '../protocol.js';
+import type { Agent, Group, WorktreeChanges } from '../protocol.js';
 import { agentIdentityArgs, git, gitRaw, humanIdentityArgs, NO_SIGNING } from './git.js';
 
 export const MAX_DIFF_CHARS = 200_000;
@@ -188,4 +188,42 @@ export async function discardWork(dataDir: string, group: Group, agent: Agent): 
   const worktree = await openWorktree(dataDir, group, agent);
   await git(worktree.path, ['reset', '-q', '--hard', base]);
   await git(worktree.path, ['clean', '-q', '-fd']);
+}
+
+/** No uncommitted work: what the UI shows for a clean worktree, or for none at all. */
+export const NO_CHANGES: WorktreeChanges = { files: [], diff: '', truncated: false };
+
+// Looking must never get in the way of an agent or of Symposium's own git steps, so these
+// commands take no locks and leave the index alone.
+const READ_ONLY = { env: { GIT_OPTIONAL_LOCKS: '0' } };
+
+/**
+ * What is in a worktree but not committed yet: the work of a turn in progress. New files are
+ * included. Nothing is staged or changed by looking.
+ */
+export async function uncommittedChanges(path: string): Promise<WorktreeChanges> {
+  if (!existsSync(join(path, '.git'))) return NO_CHANGES;
+  const tracked = await gitRaw(path, ['diff', 'HEAD'], READ_ONLY);
+  const names = await gitRaw(path, ['diff', 'HEAD', '--name-only', '-z'], READ_ONLY);
+  const untracked = await gitRaw(
+    path,
+    ['ls-files', '--others', '--exclude-standard', '-z'],
+    READ_ONLY,
+  );
+  if (tracked.code !== 0 || names.code !== 0 || untracked.code !== 0) return NO_CHANGES;
+
+  const newFiles = untracked.stdout.split('\0').filter(Boolean);
+  let diff = tracked.stdout;
+  for (const file of newFiles) {
+    if (diff.length > MAX_DIFF_CHARS) break;
+    // Exits with 1 because the two sides differ, which is the point.
+    const added = await gitRaw(path, ['diff', '--no-index', '--', '/dev/null', file], READ_ONLY);
+    diff += added.stdout;
+  }
+  const truncated = diff.length > MAX_DIFF_CHARS;
+  return {
+    files: [...names.stdout.split('\0').filter(Boolean), ...newFiles].sort(),
+    diff: truncated ? diff.slice(0, MAX_DIFF_CHARS) : diff,
+    truncated,
+  };
 }

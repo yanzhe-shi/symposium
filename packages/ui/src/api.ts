@@ -1,7 +1,10 @@
 import type {
   Agent,
+  AgentProgress,
   CreateGroupRequest,
   ErrorResponse,
+  FileContent,
+  FolderListing,
   Group,
   HireRequest,
   Message,
@@ -14,6 +17,7 @@ import type {
   TeamStatus,
   UpdateAgentRequest,
   UpdateGroupRequest,
+  WorktreeChanges,
 } from '@symposium/engine/protocol';
 
 export const MAX_PAGE_SIZE = 500;
@@ -36,6 +40,9 @@ function send<T>(method: string, url: string, body?: unknown): Promise<T> {
 }
 
 const groupUrl = (groupId: string) => `/api/groups/${encodeURIComponent(groupId)}`;
+
+/** Where the Code tab looks: the project folder, or the worktree of the agent with this id. */
+export type CodeLocation = 'project' | (string & {});
 
 export const api = {
   groups: () => request<Group[]>('/api/groups'),
@@ -75,6 +82,18 @@ export const api = {
   stopAll: (groupId: string) => send<{ stopped: boolean }>('POST', `${groupUrl(groupId)}/stop`),
   stopAgent: (groupId: string, agentId: string) =>
     send<{ stopped: boolean }>('POST', `${groupUrl(groupId)}/agents/${agentId}/stop`),
+
+  /** The team's recent tool calls, oldest first. */
+  activity: (groupId: string) => request<AgentProgress[]>(`${groupUrl(groupId)}/activity`),
+  /** An agent's uncommitted work in its worktree. */
+  changes: (groupId: string, agentId: string) =>
+    request<WorktreeChanges>(
+      `${groupUrl(groupId)}/changes?${new URLSearchParams({ where: agentId })}`,
+    ),
+  files: (groupId: string, where: CodeLocation, path: string) =>
+    request<FolderListing>(`${groupUrl(groupId)}/files?${new URLSearchParams({ where, path })}`),
+  file: (groupId: string, where: CodeLocation, path: string) =>
+    request<FileContent>(`${groupUrl(groupId)}/file?${new URLSearchParams({ where, path })}`),
 
   project: (groupId: string) => request<{ content: string }>(`${groupUrl(groupId)}/project`),
   saveProject: (groupId: string, content: string) =>

@@ -2,6 +2,7 @@ import { isAbsolute, relative, sep } from 'node:path';
 import type { AgentEvent, AgentEventKind } from './types.js';
 
 const MAX_TARGET = 300;
+const MAX_SUMMARY_TARGET = 80;
 const MAX_TEXT = 300;
 
 function oneLine(text: string, max: number): string {
@@ -25,18 +26,38 @@ const VERBS: Record<Exclude<AgentEventKind, 'text' | 'denied'>, string> = {
   tool: 'used',
 };
 
-/** One tool call, described for the activity timeline: "read src/cart.ts". */
+const UNTARGETED: Record<Exclude<AgentEventKind, 'text' | 'denied' | 'tool'>, string> = {
+  read: 'read a file',
+  edit: 'edited a file',
+  search: 'searched the files',
+  command: 'ran a command',
+};
+
+/** Shortens a long target for a summary by cutting out its middle, which says the least. */
+function abridge(target: string): string {
+  if (target.length <= MAX_SUMMARY_TARGET) return target;
+  const half = Math.floor((MAX_SUMMARY_TARGET - 1) / 2);
+  return `${target.slice(0, half)}…${target.slice(-half)}`;
+}
+
+/**
+ * One tool call, described for the activity timeline: "read src/cart.ts". The summary shortens
+ * a very long target; `target` keeps it.
+ */
 export function toolEvent(
   kind: Exclude<AgentEventKind, 'text' | 'denied'>,
   tool: string,
   target?: string,
 ): AgentEvent {
-  const shown = target === undefined ? undefined : oneLine(target, MAX_TARGET);
+  const full = target === undefined ? undefined : oneLine(target, MAX_TARGET);
+  const shown = full && abridge(full);
   const summary =
     kind === 'tool'
       ? `used ${tool}${shown ? ` on ${shown}` : ''}`
-      : `${VERBS[kind]} ${shown || (kind === 'command' ? 'a command' : 'something')}`;
-  return { kind, tool, ...(shown ? { target: shown } : {}), summary };
+      : shown
+        ? `${VERBS[kind]} ${shown}`
+        : UNTARGETED[kind];
+  return { kind, tool, ...(full ? { target: full } : {}), summary };
 }
 
 /** Something the agent said part-way through its turn. */
@@ -54,11 +75,26 @@ export function parseJsonLine(line: string): Record<string, unknown> | undefined
   const start = line.indexOf('{');
   if (start === -1) return undefined;
   try {
-    const parsed: unknown = JSON.parse(line.slice(start));
-    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : undefined;
+    return asRecord(JSON.parse(line.slice(start)));
   } catch {
     return undefined;
   }
+}
+
+/** The first of `keys` that holds a non-empty string in `record`. */
+export function firstString(
+  record: Record<string, unknown> | undefined,
+  keys: readonly string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = record?.[key];
+    if (typeof value === 'string' && value !== '') return value;
+  }
+  return undefined;
+}
+
+export function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
