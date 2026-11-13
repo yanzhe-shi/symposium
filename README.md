@@ -4,18 +4,21 @@ Symposium is a group chat where you hire AI agents as a team and run a software 
 
 Each group chat is one project folder. You add agents from any provider (Claude Code, Antigravity, or any OpenAI-compatible API such as a local Ollama), give each a name, a model and a role, and they plan, build and review the work together. You approve the hires, the plan and every merge.
 
-> **Status:** working prototype (version 1). It runs locally on your machine. Expect rough edges.
+> **Status:** working prototype. It runs locally on your machine. Expect rough edges.
 
 ## What it does
 
-- **A chat per project.** Create a group linked to a folder. Symposium makes it a git repo if it isn't one.
+- **A chat per project.** Create a group linked to a folder: a new one that Symposium suggests, or a project you already have. Symposium makes it a git repo if it isn't one.
 - **Hire a team.** A lead plans the work and assigns it, workers build it, a reviewer checks it, and a scribe keeps `project.md` current.
 - **@mentions route the work.** Your message goes to the agents you mention, or to the lead. Agents hand work to each other the same way.
 - **Agents work in parallel.** Every agent has an inbox and works through it one turn at a time, while its teammates do the same. You set how many may work at once (3 by default).
 - **Talk at any time.** A new message never stops anyone. A busy agent gets it in its next turn; the chat shows it as "queued for Ada" until then.
 - **Round limits.** Each message you send starts a thread. After 6 hand-offs between agents in a thread (you can change this), that thread waits for you. Other threads carry on.
-- **Any model, any setup.** Pick each agent's model from the provider's own list or type any name, set its effort and file access, and change them later without firing anyone.
+- **Any model, any setup.** Pick each agent's model from the provider's own list or type any name, set its effort, file access and terminal, and change them later without firing anyone.
 - **Git isolation.** Every worker edits in its own branch and worktree. Its changes show up in the chat as a diff. Nothing reaches your project until you click **Merge**.
+- **See the work as it happens.** Each agent's card shows what it is doing: the files it reads and edits and the commands it runs. The **Code** tab shows the project or any worktree as a file tree, and an agent's changes live, before they are committed.
+- **Terminal commands, with your approval.** A worker asks before it runs a command: **Allow once**, **Always allow** or **Deny**, right in the chat. Only that agent waits. You can give an agent an allow-list or let it run freely in its own worktree. `git push`, `sudo` and anything that reaches outside its folder always ask.
+- **A terminal and VS Code for you.** Run your own commands in the project or a worktree from the Code tab, and open the project with every worktree side by side in VS Code.
 - **Memory that stays with the agent.** Each agent keeps its own memory file, and every agent reads `project.md` before working. Both belong to Symposium, not to the provider.
 - **You stay in charge.** Work stops only when you say so: **Stop all**, **Stop** on one agent, `/stop`, or `/now @Ada …` to interrupt Ada with something urgent. Approve or decline the hires the lead proposes.
 
@@ -30,10 +33,11 @@ pnpm dev
 
 Then open <http://localhost:5173>:
 
-1. Create a group: a name and an absolute folder path, for example `/home/you/projects/sock-shop`.
+1. Create a group: give it a name. Symposium suggests a new folder in `~/symposium-projects`; type or **Browse…** to use another, such as a project you already have.
 2. In the **Team** panel, hire a **lead** (for example Claude Code, `sonnet`), one or two **workers** and a **scribe** on a small model (`haiku`).
 3. Tell the lead what you want to build. It replies with a plan; approve it, and the work begins.
-4. Review each diff in the chat and click **Merge** or **Discard**.
+4. When a worker asks to run a command, such as the tests, allow or deny it in the chat.
+5. Review each diff in the chat and click **Merge** or **Discard**.
 
 See [docs/SETUP.md](docs/SETUP.md) for the full setup guide, and [examples/team.md](examples/team.md) for a sample team and first message.
 
@@ -41,26 +45,39 @@ See [docs/SETUP.md](docs/SETUP.md) for the full setup guide, and [examples/team.
 
 The code owns the rules, the lead owns the decisions, and you own the approvals.
 
-| Who           | Decides                                                                         |
-| ------------- | ------------------------------------------------------------------------------- |
-| Engine (code) | Turn order, round limits, who can edit what, every git operation, the audit log |
-| Lead agent    | How to split the work, who does each task, when work is good enough             |
-| You           | Hires, plans, merges, stopping the team                                         |
+| Who           | Decides                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| Engine (code) | Turn order, round limits, who can edit what, which commands may run, every git operation, the audit log |
+| Lead agent    | How to split the work, who does each task, when work is good enough                                     |
+| You           | Hires, plans, merges, commands, stopping the team                                                       |
 
 **Routing.** A message from you goes to the agents it @mentions, or to the lead if it mentions nobody. An agent's reply goes to the agents it @mentions. Each agent works through its own inbox one turn at a time, and different agents work in parallel, up to the group's cap. Messages that arrive while an agent is busy reach it together in its next turn. Each agent-to-agent hand-off is one round in the thread your message started, and the round limit stops runaway conversations.
 
 **Context.** The lead sees the whole recent chat. Other agents see `project.md`, their own memory, and only the messages that mention them, plus diffs waiting for review. This keeps cost down as the team grows.
 
-**Roles and access.** Each role starts with the access below. You can change an agent's file access when you hire it or later with **Edit**; anyone given edit access gets their own worktree, and their changes still wait for your merge.
+**Roles and access.** Each role starts with the access below. You can change an agent's file access and terminal when you hire it or later with **Edit**; anyone given edit access gets their own worktree, and their changes still wait for your merge.
 
-| Role     | Works in                                           | Can edit files                                                |
-| -------- | -------------------------------------------------- | ------------------------------------------------------------- |
-| Lead     | The project folder                                 | No, read only                                                 |
-| Worker   | Its own git worktree, on branch `symposium/<name>` | Yes, in its worktree only                                     |
-| Reviewer | The project folder                                 | No, read only                                                 |
-| Scribe   | No tools                                           | No. It returns the new `project.md`, and the engine writes it |
+| Role     | Works in                                           | Can edit files                                                | Terminal         |
+| -------- | -------------------------------------------------- | ------------------------------------------------------------- | ---------------- |
+| Lead     | The project folder                                 | No, read only                                                 | Off              |
+| Worker   | Its own git worktree, on branch `symposium/<name>` | Yes, in its worktree only                                     | Asks before each |
+| Reviewer | The project folder                                 | No, read only                                                 | Off              |
+| Scribe   | No tools                                           | No. It returns the new `project.md`, and the engine writes it | Never            |
 
 Built-in role descriptions live in [`roles/`](roles). Add a specialty when you hire an agent to make it, say, a frontend or database specialist.
+
+**Terminal commands.** Each agent has one of four modes. The engine decides every command; no model does.
+
+| Mode           | What happens                                                                     |
+| -------------- | -------------------------------------------------------------------------------- |
+| Off            | The agent has no terminal                                                        |
+| Ask every time | Every command waits in the chat for **Allow once**, **Always allow** or **Deny** |
+| Allow-list     | Commands on the agent's list run at once. Any other command asks                 |
+| Full auto      | Commands run without asking, in the agent's own worktree                         |
+
+In every mode these always ask: `git push`, deleting a branch, `sudo`, and anything that reaches outside the agent's folder. A command nobody answers within 10 minutes is refused. An agent that works in the shared project folder (a lead or reviewer given a terminal) can run only what its allow-list covers. Terminals need Claude Code or Antigravity; API agents have none.
+
+**Live view.** While an agent works, its card lists what it does, and every tool call and command goes into the audit log. The **Code** tab shows files read-only, an agent's uncommitted changes as a live diff, and a **Terminal** for your own commands. Agents see your terminal's output only if you click **Post to chat**.
 
 **Memory.** An agent saves notes by adding a ` ```memory ` block to its reply. Symposium removes the block from the chat, appends it to the agent's memory file and includes it in every later turn. You can read and edit any agent's memory from the Team panel.
 
@@ -71,9 +88,11 @@ Built-in role descriptions live in [`roles/`](roles). Add a specialty when you h
 Agents run on your machine with your logins, so the safe choice is the default.
 
 - Workers can edit files only inside their own worktree. The lead and reviewers can only read.
-- No agent can run shell commands. Claude Code runs in restricted mode with only file tools. Antigravity runs in its sandbox.
+- An agent runs a terminal command only if the engine allows it. By default only workers have a terminal, and each of their commands waits for you. Some commands always wait for you, whatever the mode: `git push`, deleting a branch, `sudo`, and anything that reaches outside the agent's folder.
+- These command checks read the command as text. They catch the obvious cases; they are not a sandbox. Give **Full auto** only to agents and projects you would trust with your own terminal.
+- Claude Code runs in restricted mode and Antigravity in its sandbox. If an agent still changes a file outside its folder, Symposium says so in the chat.
 - Nothing is merged without your click. Symposium never pushes, force-pushes or deletes branches.
-- Every message, agent turn, hire, commit and merge is logged with who did it.
+- Every message, agent turn, tool call, command and its approval, hire, commit and merge is logged with who did it.
 - Symposium calls only each provider's official CLI or API, with your own login or key. It never reads or stores your tokens. For API keys, you give the _name_ of an environment variable, never the key itself.
 - The engine listens on `127.0.0.1` only and rejects requests from other websites.
 
@@ -81,12 +100,14 @@ Agents run on your machine with your logins, so the safe choice is the default.
 
 ## Where things live
 
-| What                              | Where                       | Change with      |
-| --------------------------------- | --------------------------- | ---------------- |
-| Database, agent memory, worktrees | `~/.symposium/`             | `SYMPOSIUM_HOME` |
-| Database file                     | `~/.symposium/symposium.db` | `SYMPOSIUM_DB`   |
-| Engine port                       | `4400`                      | `SYMPOSIUM_PORT` |
-| Your project and `project.md`     | The folder you chose        |                  |
+| What                              | Where                       | Change with              |
+| --------------------------------- | --------------------------- | ------------------------ |
+| Database, agent memory, worktrees | `~/.symposium/`             | `SYMPOSIUM_HOME`         |
+| Database file                     | `~/.symposium/symposium.db` | `SYMPOSIUM_DB`           |
+| Engine port                       | `4400`                      | `SYMPOSIUM_PORT`         |
+| New projects, unless you choose   | `~/symposium-projects/`     | `SYMPOSIUM_PROJECTS_DIR` |
+| VS Code workspace for each group  | `~/.symposium/workspaces/`  | `SYMPOSIUM_HOME`         |
+| Your project and `project.md`     | The folder you chose        |                          |
 
 ## Development
 
