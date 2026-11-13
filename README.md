@@ -132,4 +132,4 @@ To add a provider, implement `AgentAdapter` in `packages/adapters` and register 
 
 ## License
 
-Not chosen yet. Until a license is added, all rights are reserved.
+[MIT](LICENSE). You can use, change and share Symposium freely, as long as the copyright notice stays.
