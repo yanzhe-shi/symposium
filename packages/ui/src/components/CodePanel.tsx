@@ -25,6 +25,8 @@ interface CodePanelProps {
   onRun: (where: CodeLocation, command: string) => Promise<void>;
   /** Posts a message to the chat as the human. */
   onPost: (body: string) => Promise<void>;
+  /** Opens a file of the shown folder in VS Code. */
+  onOpenInEditor: (where: CodeLocation, path: string) => void;
   where: CodeLocation;
   view: CodeView;
   onChoose: (where: CodeLocation, view: CodeView) => void;
@@ -42,6 +44,7 @@ export function CodePanel({
   terminal,
   onRun,
   onPost,
+  onOpenInEditor,
   where,
   view,
   onChoose,
@@ -123,6 +126,7 @@ export function CodePanel({
               : undefined
           }
           refreshKey={`${filesVersion}:${refreshes}`}
+          onOpenInEditor={(path) => onOpenInEditor(location, path)}
         />
       )}
     </div>
@@ -268,10 +272,11 @@ interface FileBrowserProps {
   /** Shown instead of an error when the folder does not exist yet. */
   emptyHint: string | undefined;
   refreshKey: string;
+  onOpenInEditor: (path: string) => void;
 }
 
 /** A folder tree that loads each folder when it is opened, and a viewer for one file. */
-function FileBrowser({ groupId, where, emptyHint, refreshKey }: FileBrowserProps) {
+function FileBrowser({ groupId, where, emptyHint, refreshKey, onOpenInEditor }: FileBrowserProps) {
   const [expanded, setExpanded] = useState<string[]>([]);
   const [listings, setListings] = useState<Record<string, FolderListing>>({});
   const [rootError, setRootError] = useState<string>();
@@ -384,6 +389,7 @@ function FileBrowser({ groupId, where, emptyHint, refreshKey }: FileBrowserProps
             path={openPath}
             file={file?.path === openPath ? file : undefined}
             error={fileError}
+            onOpenInEditor={() => onOpenInEditor(openPath)}
           />
         )}
       </section>
@@ -400,16 +406,23 @@ function FileViewer({
   path,
   file,
   error,
+  onOpenInEditor,
 }: {
   path: string;
   file: FileContent | undefined;
   error: string | undefined;
+  onOpenInEditor: () => void;
 }) {
   return (
     <>
       <header className="file-header small">
         <code>{path}</code>
-        {file && <span className="muted">{formatSize(file.size)}</span>}
+        <span className="file-header-actions">
+          {file && <span className="muted">{formatSize(file.size)}</span>}
+          <button type="button" className="link-button" onClick={onOpenInEditor}>
+            Open in VS Code
+          </button>
+        </span>
       </header>
       {error && <p className="form-error small">{error}</p>}
       {!error && !file && <p className="muted small">Loading…</p>}

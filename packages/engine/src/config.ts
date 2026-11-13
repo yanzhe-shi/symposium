@@ -10,9 +10,13 @@ export interface EngineConfig {
   dbPath: string;
   /** Folder with the built-in role files. */
   rolesDir: string;
+  /** Where new projects go unless the human picks another folder. */
+  projectsDir: string;
 }
 
 export const DEFAULT_PORT = 4400;
+/** Projects live in their own folders, apart from Symposium's data. */
+export const DEFAULT_PROJECTS_DIR = join(homedir(), 'symposium-projects');
 
 /** The repo's `roles/` folder. This file sits at packages/engine/src/config.ts. */
 export const BUILT_IN_ROLES_DIR = fileURLToPath(new URL('../../../roles/', import.meta.url));
@@ -26,6 +30,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): EngineConfig {
     dataDir,
     dbPath: env.SYMPOSIUM_DB || join(dataDir, 'symposium.db'),
     rolesDir: env.SYMPOSIUM_ROLES_DIR || BUILT_IN_ROLES_DIR,
+    projectsDir: env.SYMPOSIUM_PROJECTS_DIR || DEFAULT_PROJECTS_DIR,
   };
 }
 

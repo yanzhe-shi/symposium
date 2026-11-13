@@ -4,11 +4,14 @@ import type {
   CreateGroupRequest,
   ErrorResponse,
   FileContent,
+  FolderChoices,
   FolderListing,
   Group,
   HireRequest,
   Message,
   ModelList,
+  OpenInEditorRequest,
+  ProjectsFolder,
   ProviderId,
   ProviderOptions,
   ProviderInfo,
@@ -50,6 +53,15 @@ export const api = {
   createGroup: (input: CreateGroupRequest) => send<Group>('POST', '/api/groups', input),
   updateGroup: (groupId: string, changes: UpdateGroupRequest) =>
     send<Group>('PATCH', groupUrl(groupId), changes),
+
+  /** Where new projects go unless another folder is picked. */
+  projectsFolder: () => request<ProjectsFolder>('/api/fs/projects'),
+  /** The folders inside a folder, for the folder picker. Without a path: where projects go. */
+  folderChoices: (path?: string) =>
+    request<FolderChoices>(`/api/fs/dirs?${new URLSearchParams(path ? { path } : {})}`),
+  /** Opens the group's workspace, a folder or a file in VS Code on this machine. */
+  openInEditor: (groupId: string, target: OpenInEditorRequest = {}) =>
+    send<{ opened: string }>('POST', `${groupUrl(groupId)}/open`, target),
 
   providers: () => request<ProviderInfo[]>('/api/providers'),
   /** The models a provider offers right now, asked with the agent's own provider options. */

@@ -7,12 +7,18 @@ describe('loadConfig', () => {
     expect(config.host).toBe('127.0.0.1');
     expect(config.port).toBe(DEFAULT_PORT);
     expect(config.dbPath).toMatch(/\.symposium[/\\]symposium\.db$/);
+    // New projects go next to, not inside, Symposium's own data.
+    expect(config.projectsDir).toMatch(/[/\\]symposium-projects$/);
+    expect(config.projectsDir.startsWith(config.dataDir)).toBe(false);
   });
 
   it('reads overrides from the environment', () => {
     const config = loadConfig({ SYMPOSIUM_PORT: '5000', SYMPOSIUM_DB: '/tmp/test.db' });
     expect(config.port).toBe(5000);
     expect(config.dbPath).toBe('/tmp/test.db');
+    expect(loadConfig({ SYMPOSIUM_PROJECTS_DIR: '/work/projects' }).projectsDir).toBe(
+      '/work/projects',
+    );
   });
 
   it('rejects an invalid port', () => {

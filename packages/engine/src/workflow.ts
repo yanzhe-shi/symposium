@@ -16,6 +16,7 @@ import { updateProjectFile } from './scribe.js';
 import { getAgent } from './store/agents.js';
 import { logEvent } from './store/events.js';
 import { listMessagesSince } from './store/messages.js';
+import { refreshWorkspaceFile } from './vscode.js';
 
 /** Pending diff messages for an agent, newest last. */
 function pendingDiffMessages(ctx: AppContext, group: Group, agentId: string): Message[] {
@@ -97,6 +98,8 @@ export function createRunnerHooks(ctx: AppContext, approvals: CommandApprovals):
       if (agent.settings.files !== 'edit' || !group.baseBranch) return { cwd: group.folderPath! };
       const worktree = await oneAtATime(group.id, () => ensureWorktree(ctx.dataDir, group, agent));
       if (worktree.warning) postNotice(ctx, group.id, worktree.warning, 'warning');
+      // A first turn creates the worktree, which then belongs in the VS Code workspace.
+      refreshWorkspaceFile(ctx, group);
       return { cwd: worktree.path, branch: worktree.branch };
     },
     afterTurn: (group, agent, workspace, reply) =>

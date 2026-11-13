@@ -42,6 +42,14 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
     }
   }
 
+  async function openInEditor(target?: { where: CodeLocation; path?: string }): Promise<void> {
+    try {
+      await api.openInEditor(group.id, target);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function stopAll(): Promise<void> {
     try {
       await api.stopAll(group.id);
@@ -108,6 +116,14 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
             />{' '}
             Lead asks before starting work
           </label>
+          <button
+            type="button"
+            className="button-secondary button-small"
+            title="Opens the project and every agent's worktree side by side in one VS Code window"
+            onClick={() => void openInEditor()}
+          >
+            Open in VS Code
+          </button>
           <span className={`status status-${status}`}>{STATUS_LABELS[status]}</span>
         </div>
       </header>
@@ -194,6 +210,7 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
               queues={state.queues}
               progress={state.progress}
               liveChanges={state.liveChanges}
+              onOpenInEditor={(agent) => void openInEditor({ where: agent.id })}
               onShowChanges={(agent) => {
                 setCode({ where: agent.id, view: 'changes' });
                 setPanel('code');
@@ -211,6 +228,7 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
               terminal={state.terminal}
               onRun={runCommand}
               onPost={send}
+              onOpenInEditor={(where, path) => void openInEditor({ where, path })}
               where={code.where}
               view={code.view}
               onChoose={(where, view) => setCode({ where, view })}

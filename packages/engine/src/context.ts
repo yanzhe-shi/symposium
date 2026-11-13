@@ -12,5 +12,9 @@ export interface AppContext {
   /** Symposium's own data folder: agent memory and worktrees live here. */
   dataDir: string;
   rolesDir: string;
+  /** Where new projects go unless the human picks another folder. */
+  projectsDir: string;
+  /** The command that starts VS Code. */
+  vscodeCommand: string;
   createAdapter: AdapterFactory;
 }

@@ -7,6 +7,7 @@ import { isRoleKind, SINGLE_SEAT_ROLES } from './roles.js';
 import { settingsOverrides, validateSettings } from './settings.js';
 import { fireAgent, getAgent, hireAgent, listAgents, updateAgent } from './store/agents.js';
 import { logEvent } from './store/events.js';
+import { refreshWorkspaceFile } from './vscode.js';
 
 export const AGENT_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
 const RESERVED_NAMES = new Set(['you', 'ceo', 'all', 'everyone', 'team', 'system', 'symposium']);
@@ -87,6 +88,7 @@ export function hire(ctx: AppContext, group: Group, request: HireRequest): Agent
     detail: { ...clean },
   });
   ctx.hub.broadcast(group.id, { type: 'agents.changed' });
+  refreshWorkspaceFile(ctx, group);
   postNotice(
     ctx,
     group.id,
@@ -160,6 +162,7 @@ export function editAgent(
     detail: { changes: changed, ...clean },
   });
   ctx.hub.broadcast(group.id, { type: 'agents.changed' });
+  refreshWorkspaceFile(ctx, group);
   postNotice(ctx, group.id, `You changed ${agent.name}: ${changed.join(', ')}.`);
   return updated;
 }
@@ -171,6 +174,7 @@ export function fire(ctx: AppContext, group: Group, agentId: string): Agent {
   const fired = fireAgent(ctx.db, agent.id)!;
   logEvent(ctx.db, { groupId: group.id, agentId: agent.id, kind: 'agent.fired' });
   ctx.hub.broadcast(group.id, { type: 'agents.changed' });
+  refreshWorkspaceFile(ctx, group);
   postNotice(ctx, group.id, `${agent.name} left the team. Their branch and memory are kept.`);
   return fired;
 }

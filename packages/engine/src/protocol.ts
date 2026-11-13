@@ -287,6 +287,29 @@ export interface TerminalRun {
   command: string;
 }
 
+/** Answer of `GET /api/fs/projects`: where new projects go unless another folder is picked. */
+export interface ProjectsFolder {
+  path: string;
+}
+
+/** Answer of `GET /api/fs/dirs`: the folders inside one folder, for the folder picker. */
+export interface FolderChoices {
+  path: string;
+  /** Null at the top of the file system. */
+  parent: string | null;
+  dirs: string[];
+  truncated: boolean;
+}
+
+/**
+ * Body of `POST /api/groups/:id/open`. Empty: the group's VS Code workspace. `where` alone: the
+ * project folder (`project`) or an agent's worktree. With `path`: one file in that folder.
+ */
+export interface OpenInEditorRequest {
+  where?: string;
+  path?: string;
+}
+
 export interface CreateMessageRequest {
   body: string;
 }

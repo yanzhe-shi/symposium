@@ -25,6 +25,8 @@ interface TeamPanelProps {
   liveChanges: Record<string, WorktreeChanges>;
   /** Opens the Code tab on an agent's uncommitted changes. */
   onShowChanges: (agent: Agent) => void;
+  /** Opens an agent's worktree in VS Code. */
+  onOpenInEditor: (agent: Agent) => void;
   catalog: Catalog;
 }
 
@@ -90,6 +92,7 @@ export function TeamPanel({
   progress,
   liveChanges,
   onShowChanges,
+  onOpenInEditor,
   catalog,
 }: TeamPanelProps) {
   const [timelineOf, setTimelineOf] = useState<string>();
@@ -215,6 +218,16 @@ export function TeamPanel({
                 <button type="button" className="link-button" onClick={() => setMemoryOf(agent)}>
                   Memory
                 </button>
+                {agent.settings.files === 'edit' && (
+                  <button
+                    type="button"
+                    className="link-button"
+                    title={`Open ${agent.name}'s worktree in VS Code`}
+                    onClick={() => onOpenInEditor(agent)}
+                  >
+                    VS Code
+                  </button>
+                )}
                 <button
                   type="button"
                   className="link-button danger"

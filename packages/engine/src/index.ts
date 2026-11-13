@@ -9,6 +9,7 @@ const app = await buildServer({
   db,
   dataDir: config.dataDir,
   rolesDir: config.rolesDir,
+  projectsDir: config.projectsDir,
   logger: true,
 });
 app.log.info(`Using data folder ${config.dataDir} and database ${config.dbPath}`);

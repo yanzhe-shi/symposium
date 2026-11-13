@@ -28,6 +28,7 @@ export async function createTestApp(
     scribeDelayMs?: number;
     liveChangesIntervalMs?: number;
     approvalTimeoutMs?: number;
+    vscodeCommand?: string;
   } = {},
 ): Promise<TestApp> {
   const root = mkdtempSync(join(tmpdir(), 'symposium-test-'));
@@ -51,6 +52,10 @@ export async function createTestApp(
     scribeDelayMs: options.scribeDelayMs ?? 0,
     liveChangesIntervalMs: options.liveChangesIntervalMs,
     approvalTimeoutMs: options.approvalTimeoutMs,
+    // Project folders for tests go in the scratch folder, never in the real home folder.
+    projectsDir: join(workDir, 'projects'),
+    // No test may start a real editor.
+    vscodeCommand: options.vscodeCommand ?? join(root, 'no-editor-in-tests'),
   });
   return {
     app,

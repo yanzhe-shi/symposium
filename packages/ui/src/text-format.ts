@@ -61,3 +61,17 @@ export function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * The folder suggested for a new project: the group's name, made safe for a path, inside the
+ * projects folder. "Sock Shop!" in /home/you/symposium-projects gives …/sock-shop.
+ */
+export function projectFolderFor(projectsFolder: string, name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  const base = projectsFolder.replace(/[/\\]+$/, '');
+  return slug ? `${base}/${slug}` : '';
+}

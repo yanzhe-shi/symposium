@@ -7,13 +7,14 @@ import Fastify, {
 } from 'fastify';
 import { CommandApprovals } from './commands/approvals.js';
 import { HumanTerminal } from './commands/terminal.js';
-import { BUILT_IN_ROLES_DIR } from './config.js';
+import { BUILT_IN_ROLES_DIR, DEFAULT_PROJECTS_DIR } from './config.js';
 import type { AdapterFactory, AppContext } from './context.js';
 import type { Db } from './db/database.js';
 import { localhostGuard } from './localhost-guard.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerFileRoutes } from './routes/files.js';
+import { registerFolderRoutes } from './routes/folders.js';
 import { registerGroupRoutes } from './routes/groups.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMessageRoutes } from './routes/messages.js';
@@ -27,6 +28,10 @@ export interface ServerDeps {
   db: Db;
   dataDir: string;
   rolesDir?: string;
+  /** Where new projects go unless the human picks another folder. */
+  projectsDir?: string;
+  /** The command that starts VS Code. Tests pass a stand-in. */
+  vscodeCommand?: string;
   /** Tests pass a factory that returns mock adapters. */
   createAdapter?: AdapterFactory;
   /** How long a group must stay idle before the scribe updates project.md. */
@@ -58,6 +63,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     hub: new ChatHub(),
     dataDir: deps.dataDir,
     rolesDir: deps.rolesDir ?? BUILT_IN_ROLES_DIR,
+    projectsDir: deps.projectsDir ?? DEFAULT_PROJECTS_DIR,
+    vscodeCommand: deps.vscodeCommand ?? 'code',
     createAdapter: deps.createAdapter ?? defaultAdapterFactory,
   };
 
@@ -91,6 +98,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerRunRoutes(app, ctx, runner, approvals, terminal);
   registerDocumentRoutes(app, ctx);
   registerFileRoutes(app, ctx);
+  registerFolderRoutes(app, ctx);
   registerChatSocket(app, ctx);
 
   return app;
