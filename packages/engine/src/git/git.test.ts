@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Agent, Group, Message } from '../protocol.js';
 import { listEvents } from '../store/events.js';
 import { createTestApp, type TestApp } from '../testing.js';
-import { prepareRepository } from './repository.js';
+import { AGENT_FILE_PATTERNS, ignoreAgentFiles, prepareRepository } from './repository.js';
 import { worktreePath } from './workspaces.js';
 
 function sh(cwd: string, ...args: string[]): string {
@@ -36,11 +36,60 @@ describe('prepareRepository', () => {
     expect(result.baseBranch).toBe('main');
     expect(result.actions).toEqual([
       'created a git repo',
+      'set git to ignore agent files',
       'added project.md',
       'made a first commit',
     ]);
     expect(sh(folder, 'ls-files').split('\n').sort()).toEqual(['notes.txt', 'project.md']);
     expect(readFileSync(join(folder, 'project.md'), 'utf8')).toContain('# Fresh');
+  });
+
+  it('keeps the agent programs’ own files out of the first commit', async () => {
+    const folder = join(t.workDir, 'with-agent-files');
+    mkdirSync(join(folder, '.claude'), { recursive: true });
+    writeFileSync(join(folder, '.claude', 'settings.local.json'), '{}');
+    writeFileSync(join(folder, 'CLAUDE.md'), 'notes for Claude');
+    writeFileSync(join(folder, 'app.ts'), 'code');
+
+    await prepareRepository(folder, 'Shop');
+    expect(sh(folder, 'ls-files').split('\n').sort()).toEqual(['app.ts', 'project.md']);
+    expect(sh(folder, 'status', '--porcelain')).toBe('');
+    // The files are still there. Git just does not see them.
+    expect(existsSync(join(folder, 'CLAUDE.md'))).toBe(true);
+  });
+
+  it('adds its ignore patterns once, after what the human already had there', async () => {
+    const folder = join(t.workDir, 'existing-exclude');
+    mkdirSync(folder, { recursive: true });
+    sh(folder, 'init', '-q', '-b', 'main');
+    const exclude = join(folder, '.git', 'info', 'exclude');
+    mkdirSync(join(folder, '.git', 'info'), { recursive: true });
+    writeFileSync(exclude, '*.log\nCLAUDE.md');
+
+    expect(await ignoreAgentFiles(folder)).toBe(true);
+    expect(await ignoreAgentFiles(folder)).toBe(false);
+    const lines = readFileSync(exclude, 'utf8').split('\n');
+    expect(lines.slice(0, 3)).toEqual([
+      '*.log',
+      'CLAUDE.md',
+      '# Added by Symposium: files that agent programs keep for themselves',
+    ]);
+    // Everything is there exactly once, the pattern the human had included.
+    for (const pattern of AGENT_FILE_PATTERNS) {
+      expect(lines.filter((line) => line === pattern)).toHaveLength(1);
+    }
+  });
+
+  it('does not hide a file the project already tracks', async () => {
+    const folder = join(t.workDir, 'tracked');
+    mkdirSync(folder, { recursive: true });
+    sh(folder, 'init', '-q', '-b', 'main');
+    writeFileSync(join(folder, 'AGENTS.md'), 'v1');
+    commitAll(folder, 'first');
+
+    await prepareRepository(folder, 'Tracked');
+    writeFileSync(join(folder, 'AGENTS.md'), 'v2');
+    expect(sh(folder, 'status', '--porcelain')).toContain('M AGENTS.md');
   });
 
   it('leaves an existing history alone', async () => {
@@ -249,6 +298,36 @@ describe('worker isolation and merging', () => {
     const res = await decide(diff!, 'merge');
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toMatch(/Check out main/);
+  });
+
+  it('never commits the files an agent program keeps for itself', async () => {
+    await hire('Ada', 'worker', [
+      {
+        text: 'Done.',
+        files: {
+          'cart.ts': 'export {};\n',
+          '.claude/settings.local.json': '{}\n',
+          'CLAUDE.md': 'notes to self\n',
+          'docs/AGENTS.md': 'more notes\n',
+        },
+      },
+    ]);
+    await say('@Ada build the cart');
+    const [diff] = await diffMessages();
+    expect(diff!.meta).toMatchObject({ type: 'diff', files: ['cart.ts'] });
+    expect(sh(folder, 'ls-tree', '-r', '--name-only', 'symposium/ada').split('\n').sort()).toEqual([
+      'cart.ts',
+      'project.md',
+    ]);
+  });
+
+  it('starts ignoring agent files in a group made before Symposium did so', async () => {
+    const exclude = join(folder, '.git', 'info', 'exclude');
+    writeFileSync(exclude, '');
+    await hire('Ada', 'worker', [{ text: 'Done.', files: { 'CLAUDE.md': 'notes\n' } }]);
+    await say('@Ada take notes');
+    expect(readFileSync(exclude, 'utf8')).toContain('CLAUDE.md');
+    expect(await diffMessages()).toEqual([]);
   });
 
   it('posts no diff when a worker changes nothing', async () => {

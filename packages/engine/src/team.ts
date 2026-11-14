@@ -2,6 +2,7 @@ import { isProviderId } from '@symposium/adapters';
 import { postNotice } from './chat.js';
 import type { AppContext } from './context.js';
 import { badRequest, conflict, notFound } from './errors.js';
+import { ignoreAgentFiles } from './git/repository.js';
 import type { Agent, Group, HireRequest, ProviderOptions, UpdateAgentRequest } from './protocol.js';
 import { SINGLE_SEAT_ROLES, type RoleStore } from './roles.js';
 import { settingsOverrides, validateSettings } from './settings.js';
@@ -95,6 +96,9 @@ export function hire(ctx: AppContext, group: Group, request: HireRequest): Agent
   });
   ctx.hub.broadcast(group.id, { type: 'agents.changed' });
   refreshWorkspaceFile(ctx, group);
+  // Whatever program runs this agent, its own files stay out of the project's git. This also
+  // covers groups made before Symposium did this at creation.
+  void ignoreAgentFiles(group.folderPath).catch(() => undefined);
   postNotice(
     ctx,
     group.id,

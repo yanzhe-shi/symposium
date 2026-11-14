@@ -4,6 +4,7 @@ import { postMessage, postNotice, setMessageMeta } from './chat.js';
 import type { CommandApprovals } from './commands/approvals.js';
 import type { AppContext } from './context.js';
 import { badRequest, conflict, notFound } from './errors.js';
+import { ignoreAgentFiles } from './git/repository.js';
 import {
   commitWork,
   discardWork,
@@ -100,7 +101,12 @@ export function createRunnerHooks(ctx: AppContext, approvals: CommandApprovals):
       // Whoever may edit does so in their own worktree, whatever their role. Everyone else
       // reads the project folder.
       if (agent.settings.files !== 'edit' || !group.baseBranch) return { cwd: group.folderPath! };
-      const worktree = await oneAtATime(group.id, () => ensureWorktree(ctx.dataDir, group, agent));
+      const worktree = await oneAtATime(group.id, async () => {
+        // Checked before every turn that can edit: it is one small file, and it must hold
+        // before anything is committed.
+        await ignoreAgentFiles(group.folderPath!).catch(() => undefined);
+        return ensureWorktree(ctx.dataDir, group, agent);
+      });
       if (worktree.warning) postNotice(ctx, group.id, worktree.warning, 'warning');
       // A first turn creates the worktree, which then belongs in the VS Code workspace.
       refreshWorkspaceFile(ctx, group);

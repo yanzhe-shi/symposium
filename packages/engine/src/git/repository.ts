@@ -1,8 +1,45 @@
 import { existsSync } from 'node:fs';
-import { realpath } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { badRequest } from '../errors.js';
 import { initialProjectFile, projectFilePath, writeProjectFile } from '../project-file.js';
 import { git, gitRaw, humanIdentityArgs, NO_SIGNING } from './git.js';
+
+/**
+ * Files the agent programs keep for themselves: their settings, their own instruction files.
+ * Symposium gives every agent its instructions, so these have no place in a diff.
+ */
+export const AGENT_FILE_PATTERNS: readonly string[] = [
+  '.claude/',
+  'CLAUDE.md',
+  'CLAUDE.local.md',
+  '.gemini/',
+  'GEMINI.md',
+  '.antigravity/',
+  'AGENTS.md',
+];
+
+/**
+ * Tells git to ignore the agent programs' own files in a project, so no agent commits them.
+ * The patterns go into the repo's `info/exclude`: it covers the project folder and every
+ * worktree, stays on this machine and leaves the project's `.gitignore` alone. A file the
+ * project already tracks is not affected. Returns whether anything had to be added.
+ */
+export async function ignoreAgentFiles(folder: string): Promise<boolean> {
+  const gitDir = await git(folder, ['rev-parse', '--git-common-dir']);
+  const file = resolve(folder, gitDir, 'info', 'exclude');
+  const current = await readFile(file, 'utf8').catch(() => '');
+  const present = new Set(current.split('\n').map((line) => line.trim()));
+  const missing = AGENT_FILE_PATTERNS.filter((pattern) => !present.has(pattern));
+  if (missing.length === 0) return false;
+  const gap = current === '' || current.endsWith('\n') ? '' : '\n';
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(
+    file,
+    `${current}${gap}# Added by Symposium: files that agent programs keep for themselves\n${missing.join('\n')}\n`,
+  );
+  return true;
+}
 
 export interface PreparedRepository {
   baseBranch: string;
@@ -12,8 +49,9 @@ export interface PreparedRepository {
 
 /**
  * Makes sure the project folder is the root of a git repo with at least one commit and a branch
- * checked out, so workers can branch from it. Creates project.md if missing.
- * Only creates a repo or a first commit; never touches an existing history.
+ * checked out, so workers can branch from it. Creates project.md if missing, and has git
+ * ignore the agent programs' own files. Only creates a repo or a first commit; never touches
+ * an existing history.
  */
 export async function prepareRepository(
   folder: string,
@@ -33,6 +71,9 @@ export async function prepareRepository(
     await git(folder, ['init', '-q', '-b', 'main']);
     actions.push('created a git repo');
   }
+
+  // Before the first commit, so that it does not take such files in either.
+  if (await ignoreAgentFiles(folder)) actions.push('set git to ignore agent files');
 
   const hadProjectFile = existsSync(projectFilePath(folder));
   if (!hadProjectFile) {
