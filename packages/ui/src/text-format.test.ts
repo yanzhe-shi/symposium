@@ -1,31 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffLineKind, formatText, projectFolderFor } from './text-format.ts';
-
-describe('formatText', () => {
-  it('finds mentions of known names only', () => {
-    expect(formatText('Hi @Ada and @nobody, mail a@b.c', ['Ada'])).toEqual([
-      { kind: 'text', text: 'Hi ' },
-      { kind: 'mention', name: 'Ada' },
-      { kind: 'text', text: ' and @nobody, mail a@b.c' },
-    ]);
-  });
-
-  it('separates inline code and code blocks', () => {
-    expect(formatText('Run `npm test`:\n```ts\nconst a = "@Ada";\n```\nDone', ['Ada'])).toEqual([
-      { kind: 'text', text: 'Run ' },
-      { kind: 'code', text: 'npm test' },
-      { kind: 'text', text: ':\n' },
-      { kind: 'codeBlock', language: 'ts', text: 'const a = "@Ada";' },
-      { kind: 'text', text: '\nDone' },
-    ]);
-  });
-
-  it('keeps an unclosed code block', () => {
-    expect(formatText('```\nhalf', [])).toEqual([
-      { kind: 'codeBlock', language: '', text: 'half' },
-    ]);
-  });
-});
+import { diffLineKind, projectFolderFor, shortPath } from './text-format.ts';
 
 describe('diffLineKind', () => {
   it('classifies diff lines', () => {
@@ -47,5 +21,13 @@ describe('projectFolderFor', () => {
     // Nothing to suggest until the name has a letter or a digit.
     expect(projectFolderFor(base, '')).toBe('');
     expect(projectFolderFor(base, '!!!')).toBe('');
+  });
+});
+
+describe('shortPath', () => {
+  it('keeps the end of a long path and leaves a short one alone', () => {
+    expect(shortPath('/home/you/projects/sock-shop')).toBe('…/projects/sock-shop');
+    expect(shortPath('/srv/app')).toBe('/srv/app');
+    expect(shortPath('C:\\Users\\you\\code\\app')).toBe('…/code/app');
   });
 });

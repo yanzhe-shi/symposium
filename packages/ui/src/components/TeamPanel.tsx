@@ -11,6 +11,8 @@ import { api } from '../api.ts';
 import type { Catalog } from '../App.tsx';
 import { activityLine } from '../group-state.ts';
 import { AgentForm } from './AgentForm.tsx';
+import { Avatar } from './Avatar.tsx';
+import { PersonPlusIcon } from './icons.tsx';
 import { MemoryDialog } from './MemoryDialog.tsx';
 
 interface TeamPanelProps {
@@ -137,7 +139,7 @@ export function TeamPanel({
   return (
     <div className="team-panel">
       {team.length === 0 && (
-        <p className="muted small">
+        <p className="muted small empty-hint">
           Start with a <strong>lead</strong>: it plans the work, asks you to approve the plan and
           proposes the rest of the team. Add a <strong>scribe</strong> on a cheap model to keep
           project.md current.
@@ -153,24 +155,28 @@ export function TeamPanel({
           const changed = liveChanges[agent.id]?.files.length ?? 0;
           const showTimeline = timelineOf === agent.id && did.length > 0;
           return (
-            <li key={agent.id} className="agent-card">
+            <li key={agent.id} className={`agent-card${working ? ' agent-card-working' : ''}`}>
               <div className="agent-card-top">
-                <span className={`activity-dot${working ? ' activity-working' : ''}`} aria-hidden />
-                <strong>{agent.name}</strong>
-                <span className={`role-badge role-${agent.role}`}>{agent.role}</span>
+                <Avatar name={agent.name} working={working} />
+                <div className="agent-identity">
+                  <div className="agent-name-row">
+                    <strong>{agent.name}</strong>
+                    <span className={`role-badge role-${agent.role}`}>{agent.role}</span>
+                  </div>
+                  <div className="muted small agent-model">
+                    {[
+                      agent.provider,
+                      agent.model,
+                      ...settingsSummary(
+                        agent,
+                        catalog.roles.find((role) => role.kind === agent.role),
+                      ),
+                    ].join(' · ')}
+                  </div>
+                </div>
                 <span className={`agent-status${busy ? ' agent-status-busy' : ''}`}>
                   {agentStatusLabel(working, queued)}
                 </span>
-              </div>
-              <div className="muted small">
-                {[
-                  agent.provider,
-                  agent.model,
-                  ...settingsSummary(
-                    agent,
-                    catalog.roles.find((role) => role.kind === agent.role),
-                  ),
-                ].join(' · ')}
               </div>
               {agent.instructions && (
                 <div className="small agent-instructions">{agent.instructions}</div>
@@ -241,8 +247,8 @@ export function TeamPanel({
         })}
       </ul>
       {error && <p className="form-error">{error}</p>}
-      <button type="button" onClick={() => setHiring(true)}>
-        + Hire an agent
+      <button type="button" className="hire-button" onClick={() => setHiring(true)}>
+        <PersonPlusIcon /> Hire an agent
       </button>
       {memoryOf && (
         <MemoryDialog group={group} agent={memoryOf} onClose={() => setMemoryOf(undefined)} />

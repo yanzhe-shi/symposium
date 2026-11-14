@@ -1,6 +1,7 @@
 import type { Message, MessageMeta, ProposalStatus } from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { api } from '../api.ts';
+import { Avatar } from './Avatar.tsx';
 
 type ProposalMeta = Extract<MessageMeta, { type: 'hire-proposal' }>;
 
@@ -36,9 +37,18 @@ export function HireProposalCard({
   }
 
   return (
-    <article className="card proposal-card">
+    <article className={`card proposal-card proposal-${meta.status}`}>
       <header className="card-header">
-        <strong>Hire proposal: {hire.name}</strong>
+        <Avatar name={hire.name} size="small" />
+        <div className="card-title">
+          <strong>
+            Hire proposal: {hire.name}{' '}
+            <span className={`role-badge role-${hire.role}`}>{hire.role}</span>
+          </strong>
+          <span className="muted small card-subtitle">
+            {hire.provider} · {hire.model}
+          </span>
+        </div>
         <span className={`pill pill-${meta.status}`}>{STATUS_LABELS[meta.status]}</span>
       </header>
       <p className="small">{message.body}</p>

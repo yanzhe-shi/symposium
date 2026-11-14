@@ -1,6 +1,7 @@
 import type { Group } from '@symposium/engine/protocol';
 import { useEffect, useState } from 'react';
 import { api } from '../api.ts';
+import { RichText } from './RichText.tsx';
 
 /** Shows the group's project.md, reloading when the scribe updates it. Editable by hand. */
 export function ProjectPanel({ group, version }: { group: Group; version: number }) {
@@ -46,7 +47,9 @@ export function ProjectPanel({ group, version }: { group: Group; version: number
       {error && <p className="form-error">{error}</p>}
       {draft === undefined ? (
         <>
-          <pre className="project-text">{content ?? 'Loading…'}</pre>
+          <div className="project-text">
+            {content === undefined ? 'Loading…' : <RichText text={content} names={[]} />}
+          </div>
           <button
             type="button"
             className="button-secondary"

@@ -13,6 +13,7 @@ import type {
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api.ts';
 import type { Catalog } from '../App.tsx';
+import { InlineText } from './RichText.tsx';
 
 interface AgentFormProps {
   group: Group;
@@ -239,7 +240,9 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
           ))}
         </select>
       </label>
-      <p className="muted small">{provider.description}</p>
+      <p className="muted small">
+        <InlineText text={provider.description} />
+      </p>
       <label>
         Model
         <input

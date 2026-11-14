@@ -83,9 +83,9 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **Stop all** (next to "working…") cancels every turn and empties every inbox. **Stop** on an agent's card does the same for that agent only.
 - **`/stop`** as a message stops everyone. `/stop @Ada` stops only Ada.
 - **`/now @Ada …`** interrupts Ada's current turn and restarts her on that message.
-- **Round limit** (header): how many hand-offs between agents are allowed in one thread before it waits for you. Every message you send starts a new thread. Default 6.
-- **At once** (header): how many agents may work at the same time. Default 3.
-- **Lead asks before starting work** (header): on by default. Switch it off and the lead assigns tasks straight away instead of waiting for you to approve a plan.
+- **Round limit** (**Settings** in the header): how many hand-offs between agents are allowed in one thread before it waits for you. Every message you send starts a new thread. Default 6.
+- **Agents at once** (**Settings**): how many agents may work at the same time. Default 3.
+- **Lead asks before starting work** (**Settings**): on by default. Switch it off and the lead assigns tasks straight away instead of waiting for you to approve a plan.
 - **project.md updates** happen once the whole team has been idle for 30 seconds, not after every reply.
 - **Edit** an agent from its card to change its model, role, effort, file access or terminal without firing it. The change applies from its next turn. Giving a lead or reviewer **Edit** file access gives it its own branch and worktree, like a worker.
 - **Fire** an agent from the Team panel. Its branch, worktree and memory are kept. Hiring the same name again brings it back with its memory.
@@ -95,6 +95,7 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **Open in VS Code** (header) opens the project and every agent's worktree side by side. **VS Code** on an agent's card opens just its worktree, and the Code tab can open the file you are reading. This needs VS Code's `code` command on your PATH.
 - **project.md tab**: read or edit the shared project description.
 - **Memory**: read or edit what each agent has chosen to remember.
+- **Light and dark.** Symposium follows your system's setting. The round button at the bottom of the sidebar switches between system, light and dark.
 
 ## Where your data is
 

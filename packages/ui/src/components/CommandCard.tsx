@@ -1,6 +1,7 @@
 import type { Agent, CommandStatus, Message, MessageMeta } from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { api } from '../api.ts';
+import { Avatar } from './Avatar.tsx';
 
 type CommandMeta = Extract<MessageMeta, { type: 'command' }>;
 type Choice = 'allow-command' | 'always-allow-command' | 'deny-command';
@@ -41,16 +42,25 @@ export function CommandCard({ groupId, message, meta, agents }: CommandCardProps
   return (
     <article className={`card command-card command-${meta.status}`}>
       <header className="card-header">
-        <strong>{agentName} wants to run a command</strong>
+        <Avatar name={agentName} size="small" />
+        <div className="card-title">
+          <strong>
+            {agentName} {meta.status === 'pending' ? 'wants to run' : 'asked to run'} a command
+          </strong>
+          <span className="muted small card-subtitle">In {meta.folder}</span>
+        </div>
         <span className={`pill pill-${meta.status}`}>
           {STATUS_LABELS[meta.status]}
           {meta.always ? ' · always' : ''}
         </span>
       </header>
-      <pre className="command-text">{meta.command}</pre>
-      <p className="muted small">
-        In {meta.folder}. {meta.reason}
-      </p>
+      <pre className="command-text">
+        <span className="command-prompt" aria-hidden>
+          ${' '}
+        </span>
+        {meta.command}
+      </pre>
+      <p className="muted small">{meta.reason}</p>
       {error && <p className="form-error">{error}</p>}
       {meta.status === 'pending' && (
         <div className="card-actions">

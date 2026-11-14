@@ -31,7 +31,7 @@ Send this without mentioning anyone, so it goes to the lead:
 
 If a thread stops with "Round limit reached", read where things stand and reply to carry on.
 
-To skip step 2, untick **Lead asks before starting work** in the header: Lea then assigns tasks in her first reply.
+To skip step 2, switch off **Lead asks before starting work** under **Settings** in the header: Lea then assigns tasks in her first reply.
 
 To be asked less often, click **Edit** on a worker and set **Terminal commands** to **Allow-list** with the commands you trust, such as `npm test`.
 
