@@ -12,7 +12,7 @@ export default tseslint.config(
   },
   {
     // Plain Node scripts, which are not type-checked and so need their globals named.
-    files: ['bin/**/*.mjs'],
+    files: ['bin/**/*.mjs', 'scripts/**/*.mjs'],
     languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
   },
   {

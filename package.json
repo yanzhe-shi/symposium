@@ -1,5 +1,6 @@
 {
   "name": "symposium",
+  "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -19,7 +20,9 @@
     "typecheck": "pnpm -r typecheck",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "start": "node bin/symposium.mjs"
+    "start": "node bin/symposium.mjs",
+    "build:app": "node scripts/build-app.mjs",
+    "package": "scripts/package.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

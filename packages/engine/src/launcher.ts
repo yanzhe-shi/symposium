@@ -16,26 +16,42 @@ Usage:
 Options:
   --port <number>        Use another port (default 4400, or SYMPOSIUM_PORT)
   --no-open              Start without opening the browser
+  --app                  Open in a window of its own (needs Chrome, Chromium or Edge)
+  -v, --version          Show the version
   -h, --help             Show this help
 
 Your data is kept in ~/.symposium (or SYMPOSIUM_HOME). New projects go in ~/symposium-projects.`;
 
-export type LauncherCommand = 'start' | 'stop' | 'status' | 'help';
+export type LauncherCommand = 'start' | 'stop' | 'status' | 'help' | 'version';
 
 export interface LauncherArgs {
   command: LauncherCommand;
   port?: number;
   open: boolean;
+  /** Open the page in a window of its own, without tabs or an address bar, when that is possible. */
+  appWindow: boolean;
+}
+
+/** The version in the package.json at the top of the repo, or of the packaged app. */
+export function symposiumVersion(): string {
+  try {
+    const file = new URL('../../../package.json', import.meta.url);
+    return (JSON.parse(readFileSync(file, 'utf8')) as { version?: string }).version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
 }
 
 /** Reads the command line. Throws an Error with a message for the user when it makes no sense. */
 export function parseArgs(argv: readonly string[]): LauncherArgs {
-  const args: LauncherArgs = { command: 'start', open: true };
+  const args: LauncherArgs = { command: 'start', open: true, appWindow: false };
   let named = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
     if (arg === '-h' || arg === '--help' || arg === 'help') args.command = 'help';
+    else if (arg === '-v' || arg === '--version' || arg === 'version') args.command = 'version';
     else if (arg === '--no-open') args.open = false;
+    else if (arg === '--app') args.appWindow = true;
     else if (arg === '--port' || arg.startsWith('--port=')) {
       const value = arg === '--port' ? argv[++i] : arg.slice('--port='.length);
       const port = Number(value);
@@ -53,23 +69,42 @@ export function parseArgs(argv: readonly string[]): LauncherArgs {
   return args;
 }
 
-/** The programs that can open a web page here, best first. The first one found is used. */
+/** Browsers that can show a page as an app: a window of its own, with no tabs or address bar. */
+const APP_WINDOW_BROWSERS = [
+  'google-chrome',
+  'google-chrome-stable',
+  'chromium',
+  'chromium-browser',
+  'microsoft-edge',
+  'microsoft-edge-stable',
+  'brave-browser',
+];
+
+/**
+ * The programs that can open a web page here, best first. The first one found is used. With
+ * `appWindow`, the browsers that can show the page as an app come first on Linux, and the usual
+ * way of opening a page stays as the fallback.
+ */
 export function browserCommands(
   url: string,
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
+  appWindow = false,
 ): [string, string[]][] {
   if (platform === 'darwin') return [['open', [url]]];
   if (platform === 'win32') return [['cmd', ['/c', 'start', '', url]]];
-  const linux: [string, string[]][] = [['xdg-open', [url]]];
+  const asApp: [string, string[]][] = appWindow
+    ? APP_WINDOW_BROWSERS.map((browser) => [browser, [`--app=${url}`]])
+    : [];
+  const linux: [string, string[]][] = [...asApp, ['xdg-open', [url]]];
   // Inside WSL the browser is on the Windows side.
   if (env.WSL_DISTRO_NAME) return [['wslview', [url]], ['explorer.exe', [url]], ...linux];
   return linux;
 }
 
 /** Opens the page in the browser. Returns false when no way to do so was found. */
-export async function openBrowser(url: string): Promise<boolean> {
-  for (const [command, args] of browserCommands(url)) {
+export async function openBrowser(url: string, appWindow = false): Promise<boolean> {
+  for (const [command, args] of browserCommands(url, process.platform, process.env, appWindow)) {
     if (process.platform !== 'win32' && !(await commandExists(command))) continue;
     const child = spawn(command, args, { stdio: 'ignore', detached: true });
     child.on('error', () => undefined);
@@ -113,13 +148,13 @@ function readPidFile(config: EngineConfig): { pid: number; port: number } | unde
 
 async function start(
   config: EngineConfig,
-  open: boolean,
+  { open, appWindow }: LauncherArgs,
   say: (line: string) => void,
 ): Promise<number> {
   const url = pageUrl(config.port);
   if (await isRunning(config.port)) {
     say(`Symposium is already running at ${url}`);
-    if (open) await openBrowser(url);
+    if (open) await openBrowser(url, appWindow);
     return 0;
   }
   if (!existsSync(join(config.uiDir, 'index.html'))) {
@@ -147,7 +182,7 @@ async function start(
 
   say(`Symposium is running at ${url}`);
   say('Press Ctrl+C here, or run "symposium stop", to stop it.');
-  if (open && !(await openBrowser(url))) say('Open that address in your browser.');
+  if (open && !(await openBrowser(url, appWindow))) say('Open that address in your browser.');
 
   return new Promise((resolve) => {
     let stopping = false;
@@ -205,6 +240,10 @@ export async function runLauncher(
     say(HELP);
     return 0;
   }
+  if (args.command === 'version') {
+    say(`symposium ${symposiumVersion()}`);
+    return 0;
+  }
   const config = loadConfig(args.port ? { ...env, SYMPOSIUM_PORT: String(args.port) } : env);
   if (args.command === 'stop') return stop(config, say);
   if (args.command === 'status') {
@@ -213,5 +252,5 @@ export async function runLauncher(
     say(running ? `Symposium is running at ${pageUrl(port)}` : 'Symposium is not running.');
     return running ? 0 : 1;
   }
-  return start(config, args.open, say);
+  return start(config, args, say);
 }

@@ -1,0 +1,18 @@
+{
+  // Compiles the engine and the adapters to JavaScript for the packaged app.
+  // `scripts/build-app.mjs` runs this and puts the output where the app expects it.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "rootDir": "packages",
+    "outDir": "dist/build",
+    "sourceMap": false,
+    "declaration": false,
+    "removeComments": true
+  },
+  "include": ["packages/engine/src", "packages/adapters/src"],
+  "exclude": ["**/*.test.ts", "packages/engine/src/testing.ts", "packages/engine/src/test-setup.ts"]
+}

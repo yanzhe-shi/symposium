@@ -6,13 +6,16 @@ import { browserCommands, HELP, parseArgs, runLauncher } from './launcher.js';
 
 describe('parseArgs', () => {
   it('starts and opens the browser unless told otherwise', () => {
-    expect(parseArgs([])).toEqual({ command: 'start', open: true });
+    expect(parseArgs([])).toEqual({ command: 'start', open: true, appWindow: false });
     expect(parseArgs(['start', '--no-open', '--port', '5000'])).toEqual({
       command: 'start',
       open: false,
+      appWindow: false,
       port: 5000,
     });
-    expect(parseArgs(['--port=5001', 'stop'])).toEqual({ command: 'stop', open: true, port: 5001 });
+    expect(parseArgs(['--app']).appWindow).toBe(true);
+    expect(parseArgs(['--version']).command).toBe('version');
+    expect(parseArgs(['--port=5001', 'stop'])).toMatchObject({ command: 'stop', port: 5001 });
     expect(parseArgs(['status']).command).toBe('status');
     expect(parseArgs(['--help']).command).toBe('help');
   });
@@ -31,6 +34,13 @@ describe('browserCommands', () => {
     expect(browserCommands(url, 'darwin', {})).toEqual([['open', [url]]]);
     expect(browserCommands(url, 'linux', {})).toEqual([['xdg-open', [url]]]);
     expect(browserCommands(url, 'win32', {})[0]![0]).toBe('cmd');
+  });
+
+  it('tries the browsers that can show an app window first, when asked to', () => {
+    const commands = browserCommands(url, 'linux', {}, true);
+    expect(commands[0]).toEqual(['google-chrome', [`--app=${url}`]]);
+    // The usual way of opening a page is still there, for a computer without such a browser.
+    expect(commands.at(-1)).toEqual(['xdg-open', [url]]);
   });
 
   it('reaches for the Windows browser from inside WSL', () => {
@@ -59,6 +69,11 @@ describe('runLauncher', () => {
   it('prints help', async () => {
     expect(await runLauncher(['--help'], env(), say)).toBe(0);
     expect(lines).toEqual([HELP]);
+  });
+
+  it('prints the version from package.json', async () => {
+    expect(await runLauncher(['--version'], env(), say)).toBe(0);
+    expect(lines[0]).toMatch(/^symposium \d+\.\d+\.\d+$/);
   });
 
   it('rejects a bad command line with exit code 2', async () => {
