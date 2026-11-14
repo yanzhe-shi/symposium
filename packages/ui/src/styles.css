@@ -1649,8 +1649,73 @@ input.switch:checked::after {
   background: var(--error-bg);
 }
 
+.team-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .hire-button {
-  width: 100%;
+  flex: 1;
+}
+
+/* The role editor */
+
+.roles-dialog {
+  width: min(860px, 94vw);
+}
+
+.roles-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.roles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.35rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+}
+
+.roles-list .tree-item {
+  padding: 0.35rem 0.55rem;
+  font-family: inherit;
+  font-size: 0.88rem;
+}
+
+.roles-list .tree-item:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+
+.role-editor {
+  min-height: 260px;
+  max-height: 46vh;
+  font-family: var(--mono);
+  font-size: 0.8rem !important;
+  line-height: 1.55;
+}
+
+.roles-remove {
+  margin-right: auto;
+}
+
+.new-role {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.88rem;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.new-role summary {
+  cursor: pointer;
+}
+
+.new-role[open] summary {
+  margin-bottom: 0.5rem;
 }
 
 .project-panel {

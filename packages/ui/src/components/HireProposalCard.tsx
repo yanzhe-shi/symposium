@@ -1,7 +1,9 @@
-import type { Message, MessageMeta, ProposalStatus } from '@symposium/engine/protocol';
+import type { Message, MessageMeta, ProposalStatus, RoleInfo } from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { api } from '../api.ts';
 import { Avatar } from './Avatar.tsx';
+import { RichText } from './RichText.tsx';
+import { roleLabel } from './RoleBadge.tsx';
 
 type ProposalMeta = Extract<MessageMeta, { type: 'hire-proposal' }>;
 
@@ -15,10 +17,12 @@ export function HireProposalCard({
   groupId,
   message,
   meta,
+  roles,
 }: {
   groupId: string;
   message: Message;
   meta: ProposalMeta;
+  roles: RoleInfo[];
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -43,7 +47,10 @@ export function HireProposalCard({
         <div className="card-title">
           <strong>
             Hire proposal: {hire.name}{' '}
-            <span className={`role-badge role-${hire.role}`}>{hire.role}</span>
+            <span className={`role-badge role-${hire.role}`}>
+              {meta.newRole?.title ??
+                roleLabel({ role: hire.role, roleId: hire.roleId ?? hire.role }, roles)}
+            </span>
           </strong>
           <span className="muted small card-subtitle">
             {hire.provider} · {hire.model}
@@ -53,6 +60,16 @@ export function HireProposalCard({
       </header>
       <p className="small">{message.body}</p>
       {hire.instructions && <p className="small muted">{hire.instructions}</p>}
+      {meta.newRole && (
+        <details className="new-role">
+          <summary>
+            New role: <strong>{meta.newRole.title}</strong>, works like a {meta.newRole.kind}
+            {meta.status === 'pending' && '. Hiring adds the role.'}
+          </summary>
+          {meta.newRole.summary && <p className="small">{meta.newRole.summary}</p>}
+          <RichText text={meta.newRole.text} names={[]} />
+        </details>
+      )}
       {error && <p className="form-error">{error}</p>}
       {meta.status === 'pending' && (
         <div className="card-actions">

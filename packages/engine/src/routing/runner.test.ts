@@ -163,17 +163,26 @@ describe('routing', () => {
   });
 
   it('lets two workers the lead assigned in one message work at the same time', async () => {
+    // Neither worker can finish until both have started. One after the other would hang.
+    let waiting = 0;
+    let release!: () => void;
+    const bothStarted = new Promise<void>((resolve) => (release = resolve));
+    const together = (text: string) =>
+      new MockAdapter(async () => {
+        waiting += 1;
+        if (waiting === 2) release();
+        await bothStarted;
+        return { text };
+      });
     await hire('Lea', 'lead', [
       { text: '@Ada build the cart. @Bob build the list.' },
       { text: 'Noted.' },
     ]);
-    await hire('Ada', 'worker', [{ text: 'Cart done.', delayMs: 150 }]);
-    await hire('Bob', 'worker', [{ text: 'List done.', delayMs: 150 }]);
+    await hire('Ada', 'worker');
+    await hire('Bob', 'worker');
+    t.mocks.set('Ada', together('Cart done.'));
+    t.mocks.set('Bob', together('List done.'));
     await say('Build a shop');
-    await started('Ada', 'Bob');
-    // Both are in their turn together: neither waited for the other to finish.
-    const working = (await status()).agents.filter((agent) => agent.activity === 'working');
-    expect(working).toHaveLength(2);
     await settle();
     expect((await transcript()).slice(2, 4).sort()).toEqual(['Ada: Cart done.', 'Bob: List done.']);
   });

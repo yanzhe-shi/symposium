@@ -1,5 +1,5 @@
 import type { AgentAccess } from '@symposium/adapters';
-import type { Agent, AgentSettings, Group, Message } from '../protocol.js';
+import type { Agent, AgentSettings, Group, Message, RoleInfo } from '../protocol.js';
 import { applyPlanApproval, roleAccess } from '../roles.js';
 
 /** Upper bound on the conversation part of a prompt, in characters. Oldest messages go first. */
@@ -18,6 +18,8 @@ export interface PromptInput {
   /** All agents that ever wrote in the group, to name authors of old messages. */
   everyone: Agent[];
   roleText: string;
+  /** Every role there is, to name teammates' custom roles and to tell the lead what it can hire. */
+  roles?: readonly RoleInfo[];
   access: AgentAccess;
   /** The agent's terminal: its command mode and allow-list. Left out, it has none. */
   terminal?: Pick<AgentSettings, 'commands' | 'allowlist'>;
@@ -33,9 +35,15 @@ export interface PromptInput {
   interrupted?: boolean;
 }
 
-function describeAgent(agent: Agent): string {
+/** An agent's role in words: "lead" for a built-in role, "Designer" for a custom one. */
+function roleName(agent: Agent, roles: readonly RoleInfo[] = []): string {
+  const role = roles.find((candidate) => candidate.id === agent.roleId);
+  return role && !role.builtIn ? role.title : agent.role;
+}
+
+function describeAgent(agent: Agent, roles?: readonly RoleInfo[]): string {
   const specialty = agent.instructions ? `: ${agent.instructions.split('\n')[0]}` : '';
-  return `${agent.name}: ${agent.role}${specialty}`;
+  return `${agent.name}: ${roleName(agent, roles)}${specialty}`;
 }
 
 /** What the agent is told about its terminal. The engine enforces all of it. */
@@ -86,7 +94,13 @@ function accessRules(
   }
 }
 
-const HIRE_HELP = `## Proposing hires
+/** How the lead proposes hires, with the roles there are to hire into. */
+function hireHelp(roles: readonly RoleInfo[]): string {
+  const hireable = roles.filter((role) => role.kind !== 'lead');
+  const list = (hireable.length > 0 ? hireable : [])
+    .map((role) => `  - ${role.builtIn ? role.kind : role.title}: ${role.summary}`)
+    .join('\n');
+  return `## Proposing hires
 
 To propose a new teammate, add one block per person:
 
@@ -94,22 +108,37 @@ To propose a new teammate, add one block per person:
 {"name": "Max", "role": "worker", "provider": "claude-code", "model": "sonnet", "instructions": "Backend specialist: APIs and the database"}
 \`\`\`
 
-- role: worker, reviewer or scribe (there is only one lead: you)
+- role: one of these, by name. There is only one lead: you.
+${list || '  - worker, reviewer or scribe'}
 - provider: claude-code, antigravity, openai-compatible or mock. Prefer the providers your current team uses.
-- The CEO approves or rejects each proposal. Don't assign work to someone until they have joined.`;
+- The CEO approves or rejects each proposal. Don't assign work to someone until they have joined.
+
+If no role fits the job, write a new role and hire into it in the same reply:
+
+\`\`\`role
+name: Designer
+kind: worker
+summary: Designs the screens and writes the CSS.
+
+You design the product's screens. (The job description: how this teammate works and what "done" means for them.)
+\`\`\`
+
+- kind is how Symposium treats the role: \`worker\` edits files in its own git worktree, \`reviewer\` reads the project but does not change it.
+- Use the role's name as the "role" of the hire. The role is added when the CEO approves that hire.`;
+}
 
 const START_NOW = `## Start right away
 
 The CEO has turned off plan approval. When you get a goal, give a short plan and assign the first tasks in the same reply. Don't wait for a go-ahead: the CEO can redirect or stop the team at any time.`;
 
 export function buildSystemPrompt(input: PromptInput): string {
-  const { group, agent, team, roleText, access, branch, terminal } = input;
+  const { group, agent, team, roleText, roles, access, branch, terminal } = input;
   const roster = team
-    .map((member) => `- ${describeAgent(member)}${member.id === agent.id ? ' (you)' : ''}`)
+    .map((member) => `- ${describeAgent(member, roles)}${member.id === agent.id ? ' (you)' : ''}`)
     .join('\n');
 
   const sections = [
-    `You are ${agent.name}, the ${agent.role} of a software team that works together in a group chat called "${group.name}". The human running the project is the CEO: they approve plans, hires and merges.`,
+    `You are ${agent.name}, the ${roleName(agent, roles)} of a software team that works together in a group chat called "${group.name}". The human running the project is the CEO: they approve plans, hires and merges.`,
     applyPlanApproval(roleText, group.leadAsksFirst),
   ];
   if (agent.instructions) sections.push(`## Your specialty\n\n${agent.instructions}`);
@@ -147,7 +176,7 @@ export function buildSystemPrompt(input: PromptInput): string {
   );
   if (agent.role === 'lead') {
     if (!group.leadAsksFirst) sections.push(START_NOW);
-    sections.push(HIRE_HELP);
+    sections.push(hireHelp(roles ?? []));
   }
   return sections.join('\n\n');
 }

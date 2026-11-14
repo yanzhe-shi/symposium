@@ -14,6 +14,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api.ts';
 import type { Catalog } from '../App.tsx';
 import { InlineText } from './RichText.tsx';
+import { RolesDialog } from './RolesDialog.tsx';
 
 interface AgentFormProps {
   group: Group;
@@ -52,6 +53,9 @@ function suggestedRole(team: Agent[]): RoleKind {
   return team.some((agent) => agent.role === 'lead') ? 'worker' : 'lead';
 }
 
+/** The role picker's entry that opens the role editor instead of choosing a role. */
+const MANAGE_ROLES = ':manage';
+
 function defaultModel(provider: ProviderInfo, role: RoleKind): string {
   return role === 'scribe' ? provider.smallModel : (provider.modelSuggestions[0] ?? '');
 }
@@ -78,7 +82,16 @@ interface ModelLookup {
 export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProps) {
   const firstProvider = catalog.providers[0]!;
   const [name, setName] = useState(agent?.name ?? '');
-  const [role, setRole] = useState<RoleKind>(() => agent?.role ?? suggestedRole(team));
+  // The id of the role: a built-in kind or a custom role. A custom role that was deleted
+  // shows as the built-in role of the agent's kind.
+  const [roleId, setRoleId] = useState<string>(() =>
+    agent
+      ? catalog.roles.some((r) => r.id === agent.roleId)
+        ? agent.roleId
+        : agent.role
+      : suggestedRole(team),
+  );
+  const [managingRoles, setManagingRoles] = useState(false);
   const [providerId, setProviderId] = useState<ProviderId>(agent?.provider ?? firstProvider.id);
   const [model, setModel] = useState(
     () => agent?.model ?? defaultModel(firstProvider, suggestedRole(team)),
@@ -105,7 +118,9 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
   const [error, setError] = useState<string>();
 
   const provider = catalog.providers.find((p) => p.id === providerId) ?? firstProvider;
-  const roleInfo = catalog.roles.find((r) => r.kind === role);
+  const roleInfo = catalog.roles.find((r) => r.id === roleId);
+  // What the engine treats the agent as.
+  const role: RoleKind = roleInfo?.kind ?? agent?.role ?? 'worker';
   const roleFiles = roleInfo?.defaultFiles ?? 'read';
   const files = role === 'scribe' ? 'none' : (chosenFiles ?? roleFiles);
   const roleCommands = roleInfo?.defaultCommands ?? 'off';
@@ -156,8 +171,13 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
     if (next) setModel(defaultModel(next, role));
   }
 
-  function changeRole(next: RoleKind): void {
-    setRole(next);
+  function changeRole(nextId: string): void {
+    if (nextId === MANAGE_ROLES) {
+      setManagingRoles(true);
+      return;
+    }
+    const next = catalog.roles.find((r) => r.id === nextId)?.kind ?? 'worker';
+    setRoleId(nextId);
     // File access and the terminal go back to what the new role gives.
     setChosenFiles(undefined);
     setChosenCommands(undefined);
@@ -171,6 +191,7 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
     setError(undefined);
     const details = {
       role,
+      roleId,
       provider: provider.id,
       model: model.trim(),
       instructions: instructions.trim(),
@@ -217,16 +238,29 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
       )}
       <label>
         Role
-        <select value={role} onChange={(event) => changeRole(event.target.value as RoleKind)}>
+        <select value={roleId} onChange={(event) => changeRole(event.target.value)}>
           {catalog.roles.map((r) => (
-            <option key={r.kind} value={r.kind} disabled={takenSeats.has(r.kind)}>
+            <option key={r.id} value={r.id} disabled={takenSeats.has(r.kind)}>
               {r.title}
               {takenSeats.has(r.kind) ? ' (taken)' : ''}
             </option>
           ))}
+          <option value={MANAGE_ROLES}>Edit roles or add one…</option>
         </select>
       </label>
-      {roleInfo && <p className="muted small">{roleInfo.summary}</p>}
+      {roleInfo && (
+        <p className="muted small">
+          {roleInfo.summary}
+          {!roleInfo.builtIn && ` Works like a ${roleInfo.kind}.`}
+        </p>
+      )}
+      {managingRoles && (
+        <RolesDialog
+          roles={catalog.roles}
+          onChanged={catalog.reloadRoles}
+          onClose={() => setManagingRoles(false)}
+        />
+      )}
       <label>
         Provider
         <select

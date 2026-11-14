@@ -14,6 +14,7 @@ function agent(name: string, role: Agent['role'] = 'worker'): Agent {
     provider: 'mock',
     model: 'mock',
     role,
+    roleId: role,
     instructions: '',
     options: {},
     settings: defaultSettings(role),

@@ -40,6 +40,7 @@ function agent(id: string, firedAt: number | null = null): Agent {
     provider: 'mock',
     model: 'mock',
     role: 'worker',
+    roleId: 'worker',
     instructions: '',
     options: {},
     settings: { files: 'edit', commands: 'off', allowlist: [], effort: 'default' },
@@ -146,9 +147,13 @@ describe('groupReducer', () => {
 
   it('shows on a card only the settings that differ from the usual', () => {
     const role = (defaultFiles: 'edit' | 'read', defaultCommands: 'ask' | 'off') => ({
+      id: 'worker',
       kind: 'worker' as const,
       title: '',
       summary: '',
+      text: '',
+      builtIn: true,
+      edited: false,
       defaultFiles,
       defaultCommands,
     });

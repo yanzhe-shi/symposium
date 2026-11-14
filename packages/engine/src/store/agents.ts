@@ -17,6 +17,7 @@ interface AgentRow {
   provider: ProviderId;
   model: string;
   role: RoleKind;
+  role_id: string | null;
   instructions: string;
   options: string;
   settings: string;
@@ -32,6 +33,7 @@ function toAgent(row: AgentRow): Agent {
     provider: row.provider,
     model: row.model,
     role: row.role,
+    roleId: row.role_id ?? row.role,
     instructions: row.instructions,
     options: JSON.parse(row.options) as ProviderOptions,
     settings: resolveSettings(row.role, JSON.parse(row.settings) as Partial<AgentSettings>),
@@ -93,13 +95,14 @@ export function hireAgent(
 /** Replaces everything about an agent that a hire describes. */
 function writeAgent(db: Db, id: string, hire: HireRequest): void {
   db.prepare(
-    `UPDATE agents SET name = ?, provider = ?, model = ?, role = ?, instructions = ?, options = ?,
-     settings = ? WHERE id = ?`,
+    `UPDATE agents SET name = ?, provider = ?, model = ?, role = ?, role_id = ?, instructions = ?,
+     options = ?, settings = ? WHERE id = ?`,
   ).run(
     hire.name,
     hire.provider,
     hire.model,
     hire.role,
+    hire.roleId && hire.roleId !== hire.role ? hire.roleId : null,
     hire.instructions ?? '',
     JSON.stringify(hire.options ?? {}),
     JSON.stringify(settingsOverrides(hire.role, hire.settings ?? {})),

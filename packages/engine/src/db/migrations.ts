@@ -81,6 +81,12 @@ export const migrations: readonly string[] = [
   `
   ALTER TABLE agents ADD COLUMN settings TEXT NOT NULL DEFAULT '{}';
   `,
+
+  // 6: custom roles (milestone 15). `role` stays the kind the engine acts on. `role_id` names
+  // the role the agent was hired into; null means the built-in role of that kind.
+  `
+  ALTER TABLE agents ADD COLUMN role_id TEXT;
+  `,
 ];
 
 export function getSchemaVersion(db: Database.Database): number {

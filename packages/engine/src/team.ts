@@ -3,7 +3,7 @@ import { postNotice } from './chat.js';
 import type { AppContext } from './context.js';
 import { badRequest, conflict, notFound } from './errors.js';
 import type { Agent, Group, HireRequest, ProviderOptions, UpdateAgentRequest } from './protocol.js';
-import { isRoleKind, SINGLE_SEAT_ROLES } from './roles.js';
+import { SINGLE_SEAT_ROLES, type RoleStore } from './roles.js';
 import { settingsOverrides, validateSettings } from './settings.js';
 import { fireAgent, getAgent, hireAgent, listAgents, updateAgent } from './store/agents.js';
 import { logEvent } from './store/events.js';
@@ -32,8 +32,11 @@ export function validateOptions(options: ProviderOptions = {}): ProviderOptions 
   );
 }
 
-/** Checks a hire request. Returns a clean copy or throws a 400 with a readable reason. */
-export function validateHire(input: HireRequest): HireRequest {
+/**
+ * Checks a hire request. Returns a clean copy or throws a 400 with a readable reason. The role
+ * is looked up by id or name, and the copy carries its id and its kind.
+ */
+export function validateHire(input: HireRequest, roles: RoleStore): HireRequest {
   const name = input.name?.trim() ?? '';
   if (!AGENT_NAME_PATTERN.test(name)) {
     throw badRequest(
@@ -44,7 +47,9 @@ export function validateHire(input: HireRequest): HireRequest {
     throw badRequest(`"${name}" is reserved. Pick another name.`);
   }
   if (!isProviderId(input.provider)) throw badRequest(`Unknown provider "${input.provider}"`);
-  if (!isRoleKind(input.role)) throw badRequest(`Unknown role "${input.role}"`);
+  const wanted = input.roleId ?? input.role;
+  const role = typeof wanted === 'string' ? roles.find(wanted) : undefined;
+  if (!role) throw badRequest(`Unknown role "${String(wanted)}"`);
   const model = input.model?.trim() ?? '';
   if (model === '' || model.length > 100) throw badRequest('Model must be 1 to 100 characters');
   const instructions = input.instructions?.trim() ?? '';
@@ -55,10 +60,11 @@ export function validateHire(input: HireRequest): HireRequest {
     name,
     provider: input.provider,
     model,
-    role: input.role,
+    role: role.kind,
+    roleId: role.id,
     instructions,
     options: cleanOptions,
-    settings: settingsOverrides(input.role, validateSettings(input.role, input.settings)),
+    settings: settingsOverrides(role.kind, validateSettings(role.kind, input.settings)),
   };
 }
 
@@ -70,7 +76,7 @@ function requireFreeSeat(team: Agent[], role: HireRequest['role'], except?: Agen
 
 /** Adds an agent to the group and tells the chat. Used by the human's hire form and approved proposals. */
 export function hire(ctx: AppContext, group: Group, request: HireRequest): Agent {
-  const clean = validateHire(request);
+  const clean = validateHire(request, ctx.roles);
   if (!group.folderPath) {
     throw badRequest('This group has no project folder. Create a new group to hire agents.');
   }
@@ -92,15 +98,21 @@ export function hire(ctx: AppContext, group: Group, request: HireRequest): Agent
   postNotice(
     ctx,
     group.id,
-    `${agent.name} joined as ${agent.role} (${agent.provider} · ${agent.model}).`,
+    `${agent.name} joined as ${roleName(ctx.roles, agent)} (${agent.provider} · ${agent.model}).`,
   );
   return agent;
+}
+
+/** A role as it reads in a sentence: "lead" for a built-in role, "Designer" for a custom one. */
+export function roleName(roles: RoleStore, agent: Pick<Agent, 'role' | 'roleId'>): string {
+  const role = roles.of(agent);
+  return role.builtIn ? role.kind : role.title;
 }
 
 const EDITABLE: readonly (keyof UpdateAgentRequest)[] = [
   'provider',
   'model',
-  'role',
+  'roleId',
   'instructions',
   'options',
   'settings',
@@ -120,6 +132,7 @@ function describeChange(field: keyof UpdateAgentRequest, before: Agent, after: A
   if (JSON.stringify(before[field]) === JSON.stringify(after[field])) return [];
   if (field === 'instructions') return ['specialty updated'];
   if (field === 'options') return ['provider options updated'];
+  if (field === 'roleId') return [`role ${before.roleId} → ${after.roleId}`];
   return [`${field} ${String(before[field])} → ${String(after[field])}`];
 }
 
@@ -137,18 +150,22 @@ export function editAgent(
   if (!agent || agent.groupId !== group.id) throw notFound('Agent not found');
   if (agent.firedAt !== null) throw conflict(`${agent.name} has left the team. Hire them again.`);
 
-  const role = changes.role ?? agent.role;
-  const clean = validateHire({
-    name: agent.name,
-    provider: changes.provider ?? agent.provider,
-    model: changes.model ?? agent.model,
-    role,
-    instructions: changes.instructions ?? agent.instructions,
-    options: changes.options ?? agent.options,
-    // Settings that are not sent keep the value chosen before. Sending a role's default value
-    // hands that setting back to the role.
-    settings: { ...settingsOverrides(agent.role, agent.settings), ...changes.settings },
-  });
+  const clean = validateHire(
+    {
+      name: agent.name,
+      provider: changes.provider ?? agent.provider,
+      model: changes.model ?? agent.model,
+      role: agent.role,
+      // A deleted custom role cannot be chosen again: the agent falls back to its kind.
+      roleId: changes.roleId ?? changes.role ?? ctx.roles.of(agent).id,
+      instructions: changes.instructions ?? agent.instructions,
+      options: changes.options ?? agent.options,
+      // Settings that are not sent keep the value chosen before. Sending a role's default value
+      // hands that setting back to the role.
+      settings: { ...settingsOverrides(agent.role, agent.settings), ...changes.settings },
+    },
+    ctx.roles,
+  );
   requireFreeSeat(listAgents(ctx.db, group.id), clean.role, agent);
 
   const updated = updateAgent(ctx.db, agent.id, clean)!;

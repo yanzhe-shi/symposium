@@ -15,6 +15,7 @@ import type {
   ProviderId,
   ProviderOptions,
   ProviderInfo,
+  RoleDraft,
   RoleInfo,
   ServerEvent,
   TeamStatus,
@@ -74,6 +75,12 @@ export const api = {
     return request<ModelList>(`/api/providers/${providerId}/models?${query.toString()}`);
   },
   roles: () => request<RoleInfo[]>('/api/roles'),
+  createRole: (role: RoleDraft) => send<RoleInfo>('POST', '/api/roles', role),
+  updateRole: (roleId: string, changes: Partial<RoleDraft>) =>
+    send<RoleInfo>('PUT', `/api/roles/${encodeURIComponent(roleId)}`, changes),
+  /** Deletes a custom role, or resets a built-in one. Answers with the roles that remain. */
+  removeRole: (roleId: string) =>
+    send<RoleInfo[]>('DELETE', `/api/roles/${encodeURIComponent(roleId)}`),
 
   agents: (groupId: string) => request<Agent[]>(`${groupUrl(groupId)}/agents?includeFired=true`),
   hire: (groupId: string, hire: HireRequest) =>

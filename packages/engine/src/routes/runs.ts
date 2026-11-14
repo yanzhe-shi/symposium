@@ -126,6 +126,9 @@ export function registerRunRoutes(
       if (meta.status !== 'pending') throw conflict(`This proposal was already ${meta.status}`);
 
       if (request.params.decision === 'approve-hire') {
+        // A role the lead wrote for this hire is added with it, unless an earlier approval
+        // or the human already made a role of that name.
+        if (meta.newRole && !ctx.roles.find(meta.newRole.title)) ctx.roles.create(meta.newRole);
         hire(ctx, group, meta.hire);
         return setMessageMeta(ctx, message, { ...meta, status: 'approved' });
       }

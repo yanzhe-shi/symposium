@@ -1,6 +1,7 @@
 import type { AgentAdapter } from '@symposium/adapters';
 import type { Db } from './db/database.js';
 import type { Agent } from './protocol.js';
+import type { RoleStore } from './roles.js';
 import type { ChatHub } from './ws/chat-hub.js';
 
 export type AdapterFactory = (agent: Agent) => AgentAdapter;
@@ -11,7 +12,8 @@ export interface AppContext {
   hub: ChatHub;
   /** Symposium's own data folder: agent memory and worktrees live here. */
   dataDir: string;
-  rolesDir: string;
+  /** The roles agents can be hired into: built-in ones and the human's own. */
+  roles: RoleStore;
   /** Where new projects go unless the human picks another folder. */
   projectsDir: string;
   /** The command that starts VS Code. */

@@ -18,15 +18,16 @@ import type {
   Group,
   HireRequest,
   Message,
+  RoleDraft,
   TeamStatus,
   WorktreeChanges,
 } from '../protocol.js';
-import { loadRoleText } from '../roles.js';
+import { parseRoleFile, roleIdFor, validateRoleDraft } from '../roles.js';
 import { getAgent, listAgents } from '../store/agents.js';
 import { logEvent } from '../store/events.js';
 import { getGroup } from '../store/groups.js';
 import { listMessages } from '../store/messages.js';
-import { validateHire } from '../team.js';
+import { roleName, validateHire } from '../team.js';
 import { parseCommand } from './commands.js';
 import { parseMentions } from './mentions.js';
 import { PacedTask } from './paced.js';
@@ -659,7 +660,8 @@ export class TeamRunner {
         agent,
         team: listAgents(ctx.db, group.id),
         everyone: listAgents(ctx.db, group.id, { includeFired: true }),
-        roleText: await loadRoleText(ctx.rolesDir, agent.role),
+        roleText: ctx.roles.of(agent).text,
+        roles: ctx.roles.list(),
         access,
         terminal: decideCommand ? agent.settings : undefined,
         branch: workspace.branch,
@@ -729,7 +731,9 @@ export class TeamRunner {
 
       if (result.warning) postNotice(ctx, group.id, `${agent.name}: ${result.warning}`, 'warning');
       for (const problem of parsed.problems) postNotice(ctx, group.id, problem, 'warning');
-      if (agent.role === 'lead') this.postHireProposals(group, agent, parsed.hireProposals);
+      if (agent.role === 'lead') {
+        this.postHireProposals(group, agent, parsed.hireProposals, parsed.roleDrafts);
+      }
 
       try {
         await this.hooks.afterTurn(group, agent, workspace, reply);
@@ -821,13 +825,68 @@ export class TeamRunner {
     }, this.liveChangesIntervalMs);
   }
 
-  private postHireProposals(group: Group, lead: Agent, proposals: unknown[]): void {
+  /** Checks the roles a lead wrote. One that cannot be used is reported and left out. */
+  private readRoleDrafts(group: Group, lead: Agent, texts: string[]): RoleDraft[] {
+    const drafts: RoleDraft[] = [];
+    for (const text of texts) {
+      try {
+        const draft = validateRoleDraft(parseRoleFile(text));
+        // Who leads and who keeps project.md is the human's choice, made in the hire form.
+        if (draft.kind !== 'worker' && draft.kind !== 'reviewer') {
+          throw new Error('a role written by the lead works as a worker or as a reviewer');
+        }
+        drafts.push(draft);
+      } catch (error) {
+        postNotice(
+          this.ctx,
+          group.id,
+          `${lead.name} wrote a role that can't be used: ${(error as Error).message}`,
+          'warning',
+        );
+      }
+    }
+    return drafts;
+  }
+
+  /**
+   * Turns the lead's ```hire blocks into proposals the human approves or declines. A hire may
+   * use a role the lead wrote in the same reply: that role travels with the proposal and is
+   * added only if the human approves the hire.
+   */
+  private postHireProposals(
+    group: Group,
+    lead: Agent,
+    proposals: unknown[],
+    roleTexts: string[],
+  ): void {
+    const { roles } = this.ctx;
+    const drafts = this.readRoleDrafts(group, lead, roleTexts);
+    const used = new Set<RoleDraft>();
+
     for (const proposal of proposals) {
       let hire: HireRequest;
+      let newRole: RoleDraft | undefined;
       try {
+        if (typeof proposal !== 'object' || proposal === null) {
+          throw new Error('a hire is a JSON object');
+        }
+        const wanted = proposal as HireRequest;
+        const roleWanted = String(wanted.roleId ?? wanted.role ?? '');
+        if (!roles.find(roleWanted)) {
+          newRole = drafts.find((draft) => roleIdFor(draft.title) === roleIdFor(roleWanted));
+        }
         // A lead proposes who to hire. What the new agent may touch is for the human to set,
         // so any settings in the proposal are dropped and the role's defaults apply.
-        hire = validateHire({ ...(proposal as HireRequest), settings: undefined });
+        hire = validateHire(
+          newRole
+            ? { ...wanted, role: newRole.kind, roleId: undefined, settings: undefined }
+            : { ...wanted, settings: undefined },
+          roles,
+        );
+        if (newRole) {
+          used.add(newRole);
+          hire.roleId = roleIdFor(newRole.title);
+        }
       } catch (error) {
         postNotice(
           this.ctx,
@@ -837,12 +896,34 @@ export class TeamRunner {
         );
         continue;
       }
+      const role = newRole
+        ? newRole.title
+        : roleName(roles, { role: hire.role, roleId: hire.roleId! });
+      const wrote = newRole ? ` ${lead.name} wrote the role "${newRole.title}" for this hire.` : '';
       postMessage(this.ctx, {
         groupId: group.id,
         authorKind: 'system',
-        body: `${lead.name} proposes hiring ${hire.name} as ${hire.role} (${hire.provider} · ${hire.model}).`,
-        meta: { type: 'hire-proposal', status: 'pending', proposedBy: lead.id, hire },
+        body: `${lead.name} proposes hiring ${hire.name} as ${role} (${hire.provider} · ${hire.model}).${wrote}`,
+        meta: {
+          type: 'hire-proposal',
+          status: 'pending',
+          proposedBy: lead.id,
+          hire,
+          ...(newRole ? { newRole } : {}),
+        },
       });
+    }
+
+    for (const draft of drafts.filter((candidate) => !used.has(candidate))) {
+      const why = roles.find(draft.title)
+        ? 'a role with that name already exists'
+        : 'no hire in the same message uses it';
+      postNotice(
+        this.ctx,
+        group.id,
+        `${lead.name} wrote the role "${draft.title}", but ${why}, so it was not added.`,
+        'warning',
+      );
     }
   }
 }

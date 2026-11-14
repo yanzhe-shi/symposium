@@ -345,6 +345,7 @@ export function GroupView({ group, catalog, onGroupChanged, onGroupDeleted }: Gr
             groupId={group.id}
             messages={state.messages}
             agents={state.agents}
+            roles={catalog.roles}
             queuedFor={queuedFor(state)}
           />
           {busy && (

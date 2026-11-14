@@ -10,11 +10,13 @@ const SELECTED_GROUP_KEY = 'symposium.selectedGroup';
 export interface Catalog {
   providers: ProviderInfo[];
   roles: RoleInfo[];
+  /** Reads the roles again, after one was added, changed or removed. */
+  reloadRoles: () => Promise<void>;
 }
 
 export function App() {
   const [groups, setGroups] = useState<Group[]>();
-  const [catalog, setCatalog] = useState<Catalog>();
+  const [catalog, setCatalog] = useState<Omit<Catalog, 'reloadRoles'>>();
   const [selectedId, setSelectedId] = useState(() => localStorage.getItem(SELECTED_GROUP_KEY));
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string>();
@@ -43,6 +45,11 @@ export function App() {
 
   const onGroupChanged = useCallback((changed: Group) => {
     setGroups((current) => current?.map((group) => (group.id === changed.id ? changed : group)));
+  }, []);
+
+  const reloadRoles = useCallback(async () => {
+    const roles = await api.roles();
+    setCatalog((current) => current && { ...current, roles });
   }, []);
 
   const onGroupDeleted = useCallback((groupId: string) => {
@@ -78,7 +85,7 @@ export function App() {
             <GroupView
               key={selected.id}
               group={selected}
-              catalog={catalog}
+              catalog={{ ...catalog, reloadRoles }}
               onGroupChanged={onGroupChanged}
               onGroupDeleted={onGroupDeleted}
             />

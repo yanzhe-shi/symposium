@@ -3,7 +3,6 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.js';
 import { notFound } from '../errors.js';
 import type { HireRequest, ModelList, UpdateAgentRequest } from '../protocol.js';
-import { ROLES } from '../roles.js';
 import type { TeamRunner } from '../routing/runner.js';
 import { listAgents } from '../store/agents.js';
 import { editAgent, fire, hire, validateOptions } from '../team.js';
@@ -34,7 +33,8 @@ const settingsSchema = {
 const agentProperties = {
   provider: { type: 'string' },
   model: { type: 'string', maxLength: 100 },
-  role: { type: 'string' },
+  role: { type: 'string', maxLength: 60 },
+  roleId: { type: 'string', maxLength: 60 },
   instructions: { type: 'string', maxLength: 8000 },
   options: optionsSchema,
   settings: settingsSchema,
@@ -42,7 +42,7 @@ const agentProperties = {
 
 export const hireBodySchema = {
   type: 'object',
-  required: ['name', 'provider', 'model', 'role'],
+  required: ['name', 'provider', 'model'],
   properties: { name: { type: 'string', maxLength: 32 }, ...agentProperties },
   additionalProperties: false,
 } as const;
@@ -60,7 +60,6 @@ export function registerAgentRoutes(
   runner: TeamRunner,
 ): void {
   app.get('/api/providers', async () => PROVIDERS);
-  app.get('/api/roles', async () => ROLES);
 
   // The models a provider offers right now, for the model picker. The field stays free text,
   // so a failed lookup only means fewer suggestions.

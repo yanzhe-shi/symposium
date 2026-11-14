@@ -13,6 +13,8 @@ import { activityLine } from '../group-state.ts';
 import { AgentForm } from './AgentForm.tsx';
 import { Avatar } from './Avatar.tsx';
 import { PersonPlusIcon } from './icons.tsx';
+import { RoleBadge } from './RoleBadge.tsx';
+import { RolesDialog } from './RolesDialog.tsx';
 import { MemoryDialog } from './MemoryDialog.tsx';
 
 interface TeamPanelProps {
@@ -101,6 +103,7 @@ export function TeamPanel({
   const [hiring, setHiring] = useState(false);
   const [editing, setEditing] = useState<Agent>();
   const [memoryOf, setMemoryOf] = useState<Agent>();
+  const [managingRoles, setManagingRoles] = useState(false);
   const [error, setError] = useState<string>();
 
   async function fire(agent: Agent): Promise<void> {
@@ -161,7 +164,7 @@ export function TeamPanel({
                 <div className="agent-identity">
                   <div className="agent-name-row">
                     <strong>{agent.name}</strong>
-                    <span className={`role-badge role-${agent.role}`}>{agent.role}</span>
+                    <RoleBadge agent={agent} roles={catalog.roles} />
                   </div>
                   <div className="muted small agent-model">
                     {[
@@ -169,7 +172,8 @@ export function TeamPanel({
                       agent.model,
                       ...settingsSummary(
                         agent,
-                        catalog.roles.find((role) => role.kind === agent.role),
+                        catalog.roles.find((role) => role.id === agent.roleId) ??
+                          catalog.roles.find((role) => role.id === agent.role),
                       ),
                     ].join(' · ')}
                   </div>
@@ -247,9 +251,26 @@ export function TeamPanel({
         })}
       </ul>
       {error && <p className="form-error">{error}</p>}
-      <button type="button" className="hire-button" onClick={() => setHiring(true)}>
-        <PersonPlusIcon /> Hire an agent
-      </button>
+      <div className="team-buttons">
+        <button type="button" className="hire-button" onClick={() => setHiring(true)}>
+          <PersonPlusIcon /> Hire an agent
+        </button>
+        <button
+          type="button"
+          className="button-secondary"
+          title="Read, rewrite or add the job descriptions agents are hired into"
+          onClick={() => setManagingRoles(true)}
+        >
+          Roles
+        </button>
+      </div>
+      {managingRoles && (
+        <RolesDialog
+          roles={catalog.roles}
+          onChanged={catalog.reloadRoles}
+          onClose={() => setManagingRoles(false)}
+        />
+      )}
       {memoryOf && (
         <MemoryDialog group={group} agent={memoryOf} onClose={() => setMemoryOf(undefined)} />
       )}

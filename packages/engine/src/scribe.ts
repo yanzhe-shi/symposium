@@ -3,7 +3,6 @@ import { postNotice } from './chat.js';
 import type { AppContext } from './context.js';
 import { readProjectFile, writeProjectFile } from './project-file.js';
 import type { Group } from './protocol.js';
-import { loadRoleText } from './roles.js';
 import { formatMessage, MAX_TRANSCRIPT_CHARS } from './routing/prompt.js';
 import { listAgents } from './store/agents.js';
 import { logEvent } from './store/events.js';
@@ -48,7 +47,7 @@ export async function updateProjectFile(
   const current = await readProjectFile(group.folderPath);
   const systemPrompt = [
     `You are ${scribe.name}, the scribe of a software team working in a group chat called "${group.name}".`,
-    await loadRoleText(ctx.rolesDir, 'scribe'),
+    ctx.roles.of(scribe).text,
     scribe.instructions ? `## Your specialty\n\n${scribe.instructions}` : '',
   ]
     .filter(Boolean)

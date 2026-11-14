@@ -1,4 +1,4 @@
-import type { Agent, Message } from '@symposium/engine/protocol';
+import type { Agent, Message, RoleInfo } from '@symposium/engine/protocol';
 import { Fragment, useEffect, useRef } from 'react';
 import { Avatar } from './Avatar.tsx';
 import { CommandCard } from './CommandCard.tsx';
@@ -6,6 +6,7 @@ import { DiffCard } from './DiffCard.tsx';
 import { HireProposalCard } from './HireProposalCard.tsx';
 import { Logo } from './icons.tsx';
 import { RichText } from './RichText.tsx';
+import { RoleBadge } from './RoleBadge.tsx';
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 const dayFormat = new Intl.DateTimeFormat(undefined, {
@@ -48,11 +49,13 @@ interface MessageListProps {
   messages: Message[];
   /** Every agent ever in the group, so old messages keep their author's name. */
   agents: Agent[];
+  /** Every role, to name the custom ones. */
+  roles: RoleInfo[];
   /** Messages still waiting in an inbox, with the names of the busy agents they wait for. */
   queuedFor: Map<number, string[]>;
 }
 
-export function MessageList({ groupId, messages, agents, queuedFor }: MessageListProps) {
+export function MessageList({ groupId, messages, agents, roles, queuedFor }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   // True while the reader is at the newest message. Scrolling up lets go of it.
   const pinned = useRef(true);
@@ -116,6 +119,7 @@ export function MessageList({ groupId, messages, agents, queuedFor }: MessageLis
                 groupId={groupId}
                 message={message}
                 agents={agents}
+                roles={roles}
                 names={names}
                 queuedFor={queuedFor.get(message.id)}
                 continued={continues(message, previous)}
@@ -132,6 +136,7 @@ function MessageItem({
   groupId,
   message,
   agents,
+  roles,
   names,
   queuedFor,
   continued,
@@ -139,6 +144,7 @@ function MessageItem({
   groupId: string;
   message: Message;
   agents: Agent[];
+  roles: RoleInfo[];
   names: string[];
   queuedFor: string[] | undefined;
   /** Follows a message by the same author: the avatar and the name are left out. */
@@ -157,7 +163,9 @@ function MessageItem({
     return <CommandCard groupId={groupId} message={message} meta={message.meta} agents={agents} />;
   }
   if (message.meta?.type === 'hire-proposal') {
-    return <HireProposalCard groupId={groupId} message={message} meta={message.meta} />;
+    return (
+      <HireProposalCard groupId={groupId} message={message} meta={message.meta} roles={roles} />
+    );
   }
   if (message.authorKind === 'system') {
     const level = message.meta?.type === 'notice' ? message.meta.level : 'info';
@@ -202,7 +210,7 @@ function MessageItem({
         {!continued && (
           <header className="message-meta">
             <span className="message-author">{name}</span>
-            {author && <span className={`role-badge role-${author.role}`}>{author.role}</span>}
+            {author && <RoleBadge agent={author} roles={roles} />}
             {author?.firedAt != null && <span className="muted">left the team</span>}
             {time}
             {queuedChip}

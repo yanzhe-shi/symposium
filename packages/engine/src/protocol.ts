@@ -74,10 +74,25 @@ export interface ProviderInfo {
   description: string;
 }
 
-export interface RoleInfo {
-  kind: RoleKind;
+/** A role as someone writes it: what the human types in the role editor, or a lead proposes. */
+export interface RoleDraft {
+  /** The role's name, such as "Designer". */
   title: string;
+  /** How the engine treats agents in this role. */
+  kind: RoleKind;
+  /** One line for the hire form. */
   summary: string;
+  /** The job description, in Markdown. It becomes part of the agent's instructions. */
+  text: string;
+}
+
+export interface RoleInfo extends RoleDraft {
+  /** What a hire refers to. A built-in role's id is its kind. */
+  id: string;
+  /** One of the four roles Symposium comes with. */
+  builtIn: boolean;
+  /** A built-in role whose job description the human has changed. */
+  edited: boolean;
   /** The file access agents in this role get unless the human chooses otherwise. */
   defaultFiles: FileAccess;
   /** The command mode agents in this role get unless the human chooses otherwise. */
@@ -90,8 +105,11 @@ export interface Agent {
   name: string;
   provider: ProviderId;
   model: string;
+  /** How the engine treats the agent. It comes from the agent's role. */
   role: RoleKind;
-  /** Extra job description on top of the built-in role, e.g. "frontend specialist". */
+  /** The role the agent was hired into: a built-in role's kind, or a custom role's id. */
+  roleId: string;
+  /** Extra job description on top of the role, e.g. "frontend specialist". */
   instructions: string;
   options: ProviderOptions;
   /** The settings in force: the role's defaults with the human's choices on top. */
@@ -104,7 +122,13 @@ export interface HireRequest {
   name: string;
   provider: ProviderId;
   model: string;
+  /**
+   * The role to hire into: a built-in kind, or the id or name of a custom role. The engine
+   * replaces it with the role's kind.
+   */
   role: RoleKind;
+  /** The id of the role. When set it wins over `role`. */
+  roleId?: string;
   instructions?: string;
   options?: ProviderOptions;
   /** Only the settings that should differ from the role's defaults need to be given. */
@@ -130,6 +154,8 @@ export type MessageMeta =
       status: ProposalStatus;
       proposedBy: string;
       hire: HireRequest;
+      /** A role the lead wrote for this hire. Approving the hire adds the role too. */
+      newRole?: RoleDraft;
     }
   | {
       type: 'diff';

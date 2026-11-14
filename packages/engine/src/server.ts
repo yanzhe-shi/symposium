@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { createAdapter } from '@symposium/adapters';
 import websocket from '@fastify/websocket';
 import Fastify, {
@@ -11,6 +12,7 @@ import { BUILT_IN_ROLES_DIR, DEFAULT_PROJECTS_DIR } from './config.js';
 import type { AdapterFactory, AppContext } from './context.js';
 import type { Db } from './db/database.js';
 import { localhostGuard } from './localhost-guard.js';
+import { RoleStore } from './roles.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerFileRoutes } from './routes/files.js';
@@ -18,6 +20,7 @@ import { registerFolderRoutes } from './routes/folders.js';
 import { registerGroupRoutes } from './routes/groups.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMessageRoutes } from './routes/messages.js';
+import { registerRoleRoutes } from './routes/roles.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { TeamRunner } from './routing/runner.js';
 import { createRunnerHooks } from './workflow.js';
@@ -62,7 +65,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     db: deps.db,
     hub: new ChatHub(),
     dataDir: deps.dataDir,
-    rolesDir: deps.rolesDir ?? BUILT_IN_ROLES_DIR,
+    roles: new RoleStore(deps.rolesDir ?? BUILT_IN_ROLES_DIR, join(deps.dataDir, 'roles')),
     projectsDir: deps.projectsDir ?? DEFAULT_PROJECTS_DIR,
     vscodeCommand: deps.vscodeCommand ?? 'code',
     createAdapter: deps.createAdapter ?? defaultAdapterFactory,
@@ -94,6 +97,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerHealthRoutes(app);
   registerGroupRoutes(app, ctx, runner, terminal);
   registerAgentRoutes(app, ctx, runner);
+  registerRoleRoutes(app, ctx);
   registerMessageRoutes(app, ctx, runner);
   registerRunRoutes(app, ctx, runner, approvals, terminal);
   registerDocumentRoutes(app, ctx);
