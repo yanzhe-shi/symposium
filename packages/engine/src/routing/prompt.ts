@@ -119,7 +119,9 @@ export function buildSystemPrompt(input: PromptInput): string {
       '## How the chat works',
       '',
       '- To give a teammate work or ask them something, @mention them by name, like "@Ada please add the login form". Every mention gives that teammate a turn, so mention someone only when you need them to act.',
-      '- If you mention nobody, your reply goes to the CEO and nobody else is asked to act.',
+      agent.role === 'lead'
+        ? '- If you mention nobody, your reply is for the CEO and nobody else is asked to act. To answer a teammate, @mention them.'
+        : '- If you mention nobody, your reply goes back to whoever asked you: the teammate whose message you are answering, or the CEO. You never need to mention the one who asked.',
       '- Never mention yourself. The CEO needs no mention.',
       '- Teammates work at the same time, and the CEO can write at any moment without stopping anyone. Messages that arrive while you work reach you together in your next turn: answer them all in one reply.',
       '- Keep replies short and concrete. No greetings or sign-offs.',

@@ -107,6 +107,77 @@ describe('routing', () => {
     expect(lines.slice(1).sort()).toEqual(['Ada: Ada here.', 'Bob: Bob here.']);
   });
 
+  it('returns a reply that mentions nobody to the teammate who asked', async () => {
+    await hire('Lea', 'lead', [{ text: '@Ada build the cart' }, { text: 'Ready to merge.' }]);
+    await hire('Ada', 'worker', [{ text: 'Built it.' }]);
+    await say('Build a shop');
+    await settle();
+    // Ada forgot to mention Lea, and Lea still hears about it. Lea's own unaddressed reply is
+    // for the CEO, so Ada is not woken again.
+    expect(await transcript()).toEqual([
+      'CEO: Build a shop',
+      'Lea: @Ada build the cart',
+      'Ada: Built it.',
+      'Lea: Ready to merge.',
+    ]);
+    expect(t.mocks.get('Ada')!.calls).toHaveLength(1);
+  });
+
+  it('does not return an answer that was itself returned', async () => {
+    await hire('Ada', 'worker', [{ text: '@Rita is this right?' }, { text: 'Thanks.' }]);
+    await hire('Rita', 'reviewer', [{ text: 'Looks right.' }]);
+    await say('@Ada check with Rita');
+    await settle();
+    // Rita's answer goes back to Ada. Ada's "Thanks." asks for nothing, so it ends there.
+    expect(await transcript()).toEqual([
+      'CEO: @Ada check with Rita',
+      'Ada: @Rita is this right?',
+      'Rita: Looks right.',
+      'Ada: Thanks.',
+    ]);
+    expect(t.mocks.get('Rita')!.calls).toHaveLength(1);
+  });
+
+  it('returns a reply to nobody when only the CEO asked', async () => {
+    await hire('Lea', 'lead', [{ text: 'Should not speak' }]);
+    await hire('Ada', 'worker', [{ text: 'Ada here.' }]);
+    await say('@Ada status?');
+    await settle();
+    expect(await transcript()).toEqual(['CEO: @Ada status?', 'Ada: Ada here.']);
+  });
+
+  it('counts a returned reply as a round', async () => {
+    await setGroup({ maxRounds: 1 });
+    await hire('Lea', 'lead', [{ text: '@Ada build the cart' }]);
+    await hire('Ada', 'worker', [{ text: 'Built it.' }]);
+    await say('Build a shop');
+    await settle();
+    const lines = await transcript();
+    expect(lines.slice(0, 3)).toEqual([
+      'CEO: Build a shop',
+      'Lea: @Ada build the cart',
+      'Ada: Built it.',
+    ]);
+    expect(lines[3]).toMatch(/^system: Round limit reached \(1\)\. Lea is waiting for you/);
+    expect(t.mocks.get('Lea')!.calls).toHaveLength(1);
+  });
+
+  it('lets two workers the lead assigned in one message work at the same time', async () => {
+    await hire('Lea', 'lead', [
+      { text: '@Ada build the cart. @Bob build the list.' },
+      { text: 'Noted.' },
+    ]);
+    await hire('Ada', 'worker', [{ text: 'Cart done.', delayMs: 150 }]);
+    await hire('Bob', 'worker', [{ text: 'List done.', delayMs: 150 }]);
+    await say('Build a shop');
+    await started('Ada', 'Bob');
+    // Both are in their turn together: neither waited for the other to finish.
+    const working = (await status()).agents.filter((agent) => agent.activity === 'working');
+    expect(working).toHaveLength(2);
+    await settle();
+    expect((await transcript()).slice(2, 4).sort()).toEqual(['Ada: Cart done.', 'Bob: List done.']);
+  });
+
   it('lets the lead hand work to a worker and the worker report back', async () => {
     await hire('Lea', 'lead', [{ text: '@Ada build the cart.' }, { text: 'Looks done.' }]);
     await hire('Ada', 'worker', [{ text: 'Cart built. @Lea' }]);

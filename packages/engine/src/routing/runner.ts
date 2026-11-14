@@ -75,6 +75,12 @@ interface InboxItem {
   threadId: number;
   /** How many hand-offs deep in the thread the agent's answer will be. */
   round: number;
+  /**
+   * True for an answer that came back by itself: the author mentioned nobody, so the engine
+   * returned it to whoever had asked. Such an answer is not a request, so the answer to it is
+   * not returned in turn. That is what keeps two agents from thanking each other for ever.
+   */
+  returned: boolean;
   /** Whether the UI was told this message is waiting. */
   announced: boolean;
   /** Order of arrival across the group, so waiting agents start first come, first served. */
@@ -134,7 +140,8 @@ export const DEFAULT_LIVE_CHANGES_INTERVAL_MS = 1000;
  *   parallel, up to the group's cap.
  * - A human message goes to the agents it @mentions, or to the lead if it mentions nobody. It
  *   never cancels work: a busy agent gets it, with anything else that arrived, in its next turn.
- * - An agent's reply goes to the agents it @mentions.
+ * - An agent's reply goes to the agents it @mentions. A reply that mentions nobody goes back to
+ *   the teammates who asked for it. The lead's goes to the human only.
  * - Every human message starts a thread. Each hand-off between agents in a thread is a round;
  *   past the group's round limit that thread waits for the human. Other threads carry on.
  * - Work stops only when the human asks: Stop all, Stop on one agent, `/stop` or `/now`.
@@ -198,7 +205,7 @@ export class TeamRunner {
       this.enqueue(
         group.id,
         agent.id,
-        { trigger: message, threadId: message.id, round: 0 },
+        { trigger: message, threadId: message.id, round: 0, returned: false },
         urgent,
       );
       // `/now` cuts short the turn that was already going. An idle agent has simply started.
@@ -391,7 +398,7 @@ export class TeamRunner {
   private enqueue(
     groupId: string,
     agentId: string,
-    message: Pick<InboxItem, 'trigger' | 'threadId' | 'round'>,
+    message: Pick<InboxItem, 'trigger' | 'threadId' | 'round' | 'returned'>,
     urgent = false,
   ): void {
     const work = this.workOf(groupId);
@@ -527,14 +534,18 @@ export class TeamRunner {
     );
     // A stopped agent hands nothing on, even if its reply got out just before the stop.
     if (!reply || signal.aborted) return;
-    this.routeReply(groupId, agent, reply, threadId, round);
+    this.routeReply(groupId, agent, reply, items, threadId, round);
   }
 
-  /** Queues the teammates a reply mentions, one round deeper in its thread. */
+  /**
+   * Hands a reply on, one round deeper in its thread: to the teammates it mentions, or, when it
+   * mentions nobody, back to the teammates who asked for it.
+   */
   private routeReply(
     groupId: string,
     author: Agent,
     reply: Message,
+    answered: InboxItem[],
     threadId: number,
     round: number,
   ): void {
@@ -543,22 +554,41 @@ export class TeamRunner {
       (member) => member.role !== 'scribe' && member.id !== author.id,
     );
     const mentioned = parseMentions(reply.body, team);
-    if (mentioned.length === 0) return;
+    const returned = mentioned.length === 0;
+    const recipients = returned ? this.askersOf(author, answered, team) : mentioned;
+    if (recipients.length === 0) return;
 
     if (round + 1 > group.maxRounds) {
-      const waiting = mentioned.map((agent) => agent.name).join(', ');
+      const waiting = recipients.map((agent) => agent.name).join(', ');
       postMessage(this.ctx, {
         groupId,
         authorKind: 'system',
-        body: `Round limit reached (${group.maxRounds}). ${waiting} ${mentioned.length === 1 ? 'is' : 'are'} waiting for you before continuing this thread. Reply to carry on, or raise the limit.`,
+        body: `Round limit reached (${group.maxRounds}). ${waiting} ${recipients.length === 1 ? 'is' : 'are'} waiting for you before continuing this thread. Reply to carry on, or raise the limit.`,
         meta: { type: 'notice', level: 'warning' },
         threadId,
       });
       return;
     }
-    for (const agent of mentioned) {
-      this.enqueue(groupId, agent.id, { trigger: reply, threadId, round: round + 1 });
+    for (const agent of recipients) {
+      this.enqueue(groupId, agent.id, { trigger: reply, threadId, round: round + 1, returned });
     }
+  }
+
+  /**
+   * Who gets a reply that mentions nobody: the teammates whose requests it answers. An agent
+   * that calls another gets the answer back without the other having to remember to @mention.
+   * - The lead's unaddressed replies are for the human, so they go to nobody else.
+   * - An answer that was itself returned this way asks for nothing, so nothing goes back.
+   */
+  private askersOf(author: Agent, answered: InboxItem[], team: Agent[]): Agent[] {
+    if (author.role === 'lead') return [];
+    const askers: Agent[] = [];
+    for (const item of answered) {
+      if (item.returned || item.trigger.authorKind !== 'agent') continue;
+      const asker = team.find((member) => member.id === item.trigger.authorAgentId);
+      if (asker && !askers.includes(asker)) askers.push(asker);
+    }
+    return askers;
   }
 
   /**
