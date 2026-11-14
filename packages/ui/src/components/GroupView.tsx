@@ -36,11 +36,21 @@ const PARALLEL_CHOICES = [1, 2, 3, 4, 5, 6, 8];
 function GroupSettings({
   group,
   onChange,
+  onDelete,
 }: {
   group: Group;
   onChange: (changes: UpdateGroupRequest) => void;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState(group.name);
+
+  function rename(): void {
+    const wanted = name.trim();
+    if (wanted && wanted !== group.name) onChange({ name: wanted });
+    else setName(group.name);
+  }
+
   const ref = useRef<HTMLDivElement>(null);
 
   // Clicking anywhere else, or pressing Escape, closes it.
@@ -73,6 +83,18 @@ function GroupSettings({
       </button>
       {open && (
         <div className="popover" role="dialog" aria-label="Group settings">
+          <label className="setting-row setting-row-stacked">
+            <span>Name</span>
+            <input
+              value={name}
+              maxLength={80}
+              onChange={(event) => setName(event.target.value)}
+              onBlur={rename}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
+            />
+          </label>
           <label className="setting-row">
             <span>
               Round limit
@@ -123,6 +145,18 @@ function GroupSettings({
               onChange={(event) => onChange({ leadAsksFirst: event.target.checked })}
             />
           </label>
+          <div className="setting-row setting-row-danger">
+            <span>
+              Delete this group
+              <small>
+                Removes the chat, the team, their memory and their worktrees. Your project folder
+                and its git branches stay.
+              </small>
+            </span>
+            <button type="button" className="button-danger button-small" onClick={onDelete}>
+              Delete…
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -133,10 +167,15 @@ interface GroupViewProps {
   group: Group;
   catalog: Catalog;
   onGroupChanged: (group: Group) => void;
+  onGroupDeleted: (groupId: string) => void;
 }
 
-export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
-  const { state, status, loadError, send, runCommand } = useGroup(group.id, onGroupChanged);
+export function GroupView({ group, catalog, onGroupChanged, onGroupDeleted }: GroupViewProps) {
+  const { state, status, loadError, send, runCommand } = useGroup(
+    group.id,
+    onGroupChanged,
+    onGroupDeleted,
+  );
   const [panel, setPanel] = useState<'team' | 'project' | 'code'>('team');
   const [code, setCode] = useState<{ where: CodeLocation; view: CodeView }>({
     where: 'project',
@@ -168,6 +207,29 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
   async function openInEditor(target?: { where: CodeLocation; path?: string }): Promise<void> {
     try {
       await api.openInEditor(group.id, target);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function deleteGroup(): Promise<void> {
+    const unmerged = state.messages.filter(
+      (message) => message.meta?.type === 'diff' && message.meta.status === 'pending',
+    ).length;
+    const warning =
+      unmerged > 0
+        ? `\n\n${unmerged} diff${unmerged === 1 ? ' is' : 's are'} not merged yet. That work stays on its symposium/… branch in your project, but it will no longer be shown here.`
+        : '';
+    if (
+      !confirm(
+        `Delete "${group.name}"? Its chat, team, agent memory and worktrees are removed for good. Your project folder and its git branches are kept.${warning}`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.deleteGroup(group.id);
+      onGroupDeleted(group.id);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     }
@@ -237,7 +299,11 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
             <span className="status-dot" aria-hidden />
             {STATUS_LABELS[status]}
           </span>
-          <GroupSettings group={group} onChange={(changes) => void changeGroup(changes)} />
+          <GroupSettings
+            group={group}
+            onChange={(changes) => void changeGroup(changes)}
+            onDelete={() => void deleteGroup()}
+          />
           <button
             type="button"
             className="button-secondary button-small"

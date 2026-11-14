@@ -86,6 +86,16 @@ export function updateGroup(
   return getGroup(db, id);
 }
 
+/** Removes a group with its agents, messages and audit log. There is no way back. */
+export function deleteGroup(db: Db, id: string): void {
+  db.transaction(() => {
+    db.prepare('DELETE FROM events WHERE group_id = ?').run(id);
+    db.prepare('DELETE FROM messages WHERE group_id = ?').run(id);
+    db.prepare('DELETE FROM agents WHERE group_id = ?').run(id);
+    db.prepare('DELETE FROM groups WHERE id = ?').run(id);
+  })();
+}
+
 export function getScribeCursor(db: Db, groupId: string): number {
   const row = db.prepare('SELECT scribe_cursor FROM groups WHERE id = ?').get(groupId) as
     { scribe_cursor: number } | undefined;

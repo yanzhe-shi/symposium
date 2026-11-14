@@ -45,6 +45,10 @@ export function App() {
     setGroups((current) => current?.map((group) => (group.id === changed.id ? changed : group)));
   }, []);
 
+  const onGroupDeleted = useCallback((groupId: string) => {
+    setGroups((current) => current?.filter((group) => group.id !== groupId));
+  }, []);
+
   if (error) return <p className="app-message app-error">{error}</p>;
   if (!groups || !catalog) return <p className="app-message">Loading…</p>;
 
@@ -76,6 +80,7 @@ export function App() {
               group={selected}
               catalog={catalog}
               onGroupChanged={onGroupChanged}
+              onGroupDeleted={onGroupDeleted}
             />
           )
         )}

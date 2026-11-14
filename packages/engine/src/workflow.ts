@@ -1,3 +1,5 @@
+import { rm } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { postMessage, postNotice, setMessageMeta } from './chat.js';
 import type { CommandApprovals } from './commands/approvals.js';
 import type { AppContext } from './context.js';
@@ -8,15 +10,17 @@ import {
   ensureWorktree,
   mergeWork,
   pendingDiff,
+  removeWorktrees,
   uncommittedChanges,
 } from './git/workspaces.js';
+import { memoryPath } from './memory.js';
 import type { Agent, Group, Message } from './protocol.js';
 import type { RunnerHooks, Workspace } from './routing/runner.js';
 import { updateProjectFile } from './scribe.js';
 import { getAgent } from './store/agents.js';
 import { logEvent } from './store/events.js';
 import { listMessagesSince } from './store/messages.js';
-import { refreshWorkspaceFile } from './vscode.js';
+import { refreshWorkspaceFile, workspaceFilePath } from './vscode.js';
 
 /** Pending diff messages for an agent, newest last. */
 function pendingDiffMessages(ctx: AppContext, group: Group, agentId: string): Message[] {
@@ -124,6 +128,22 @@ export function createRunnerHooks(ctx: AppContext, approvals: CommandApprovals):
         signal,
       ),
   };
+}
+
+/**
+ * Removes what Symposium keeps on disk for a group: worktrees, agent memory and the VS Code
+ * workspace file. The project folder is the human's and is never touched.
+ */
+export function removeGroupFiles(ctx: AppContext, group: Group, agents: Agent[]): Promise<void> {
+  return oneAtATime(group.id, async () => {
+    await removeWorktrees(ctx.dataDir, group);
+    for (const agent of agents) {
+      await rm(dirname(memoryPath(ctx.dataDir, agent.id)), { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
+    await rm(workspaceFilePath(ctx.dataDir, group), { force: true }).catch(() => undefined);
+  });
 }
 
 function requirePendingDiff(message: Message) {

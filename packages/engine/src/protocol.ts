@@ -255,6 +255,8 @@ export type ServerEvent =
   | { type: 'message.updated'; message: Message }
   | { type: 'agents.changed' }
   | { type: 'group.changed'; group: Group }
+  /** The human deleted the group. Nothing more will come. */
+  | { type: 'group.deleted' }
   | { type: 'agent.activity'; agentId: string; activity: AgentActivity }
   /** An agent's inbox changed: these messages are waiting for its next turn. */
   | { type: 'agent.queue'; agentId: string; queuedMessageIds: number[] }

@@ -121,8 +121,17 @@ export class HumanTerminal {
   }
 
   /** Stops everything and waits until it has ended. Called when the server shuts down. */
-  async shutdown(): Promise<void> {
-    const running = [...this.runs.values()];
+  shutdown(): Promise<void> {
+    return this.stopAll(() => true);
+  }
+
+  /** Stops every command of one group and waits until they have ended. */
+  stopGroup(groupId: string): Promise<void> {
+    return this.stopAll((run) => run.groupId === groupId);
+  }
+
+  private async stopAll(which: (run: Run) => boolean): Promise<void> {
+    const running = [...this.runs.values()].filter(which);
     for (const run of running) this.kill(run);
     await Promise.all(running.map((run) => run.done));
   }

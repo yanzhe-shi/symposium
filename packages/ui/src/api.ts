@@ -54,6 +54,8 @@ export const api = {
   updateGroup: (groupId: string, changes: UpdateGroupRequest) =>
     send<Group>('PATCH', groupUrl(groupId), changes),
 
+  /** Deletes the group's chat, team and worktrees for good. The project folder stays. */
+  deleteGroup: (groupId: string) => send<{ deleted: boolean }>('DELETE', groupUrl(groupId)),
   /** Where new projects go unless another folder is picked. */
   projectsFolder: () => request<ProjectsFolder>('/api/fs/projects'),
   /** The folders inside a folder, for the folder picker. Without a path: where projects go. */

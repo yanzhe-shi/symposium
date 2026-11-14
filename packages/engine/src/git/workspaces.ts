@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { conflict } from '../errors.js';
 import type { Agent, Group, WorktreeChanges } from '../protocol.js';
@@ -188,6 +188,23 @@ export async function discardWork(dataDir: string, group: Group, agent: Agent): 
   const worktree = await openWorktree(dataDir, group, agent);
   await git(worktree.path, ['reset', '-q', '--hard', base]);
   await git(worktree.path, ['clean', '-q', '-fd']);
+}
+
+/**
+ * Removes every worktree Symposium made for a group. The project folder and its branches are
+ * left alone: work an agent committed stays on its `symposium/<name>` branch. Never throws,
+ * because it runs while a group is being deleted and must not leave that half done.
+ */
+export async function removeWorktrees(dataDir: string, group: Group): Promise<void> {
+  const root = join(dataDir, 'worktrees', group.id);
+  const folder = group.folderPath && existsSync(group.folderPath) ? group.folderPath : undefined;
+  const paths = await readdir(root).catch(() => [] as string[]);
+  for (const name of folder ? paths : []) {
+    await gitRaw(folder!, ['worktree', 'remove', '--force', join(root, name)]);
+  }
+  await rm(root, { recursive: true, force: true }).catch(() => undefined);
+  // Forgets worktrees whose folder was already gone.
+  if (folder) await gitRaw(folder, ['worktree', 'prune']);
 }
 
 /** No uncommitted work: what the UI shows for a clean worktree, or for none at all. */

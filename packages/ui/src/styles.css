@@ -692,6 +692,34 @@ input.switch:checked::after {
   color: var(--muted);
 }
 
+.setting-row-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  cursor: default;
+}
+
+.setting-row-stacked:hover {
+  background: none;
+}
+
+.setting-row-danger {
+  display: flex;
+  margin-top: 0.3rem;
+  font-weight: 600;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+  cursor: default;
+}
+
+.setting-row-danger:hover {
+  background: none;
+}
+
+.setting-row-danger > span:first-child {
+  color: var(--error);
+}
+
 .setting-row select {
   flex-shrink: 0;
   width: auto;

@@ -92,7 +92,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   await app.register(websocket);
 
   registerHealthRoutes(app);
-  registerGroupRoutes(app, ctx, runner);
+  registerGroupRoutes(app, ctx, runner, terminal);
   registerAgentRoutes(app, ctx, runner);
   registerMessageRoutes(app, ctx, runner);
   registerRunRoutes(app, ctx, runner, approvals, terminal);

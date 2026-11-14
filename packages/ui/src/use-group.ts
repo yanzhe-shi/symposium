@@ -14,11 +14,16 @@ export interface UseGroup {
 }
 
 /** Live state for one group: loads it, then follows its WebSocket events. */
-export function useGroup(groupId: string, onGroupChanged: (group: Group) => void): UseGroup {
+export function useGroup(
+  groupId: string,
+  onGroupChanged: (group: Group) => void,
+  onGroupDeleted: (groupId: string) => void,
+): UseGroup {
   const [state, dispatch] = useReducer(groupReducer, initialGroupState);
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [loadError, setLoadError] = useState<string>();
   const groupChanged = useEffectEvent(onGroupChanged);
+  const groupDeleted = useEffectEvent(onGroupDeleted);
 
   const reloadAgents = useCallback(async () => {
     dispatch({ type: 'agentsLoaded', agents: await api.agents(groupId) });
@@ -122,6 +127,10 @@ export function useGroup(groupId: string, onGroupChanged: (group: Group) => void
             break;
           case 'group.changed':
             groupChanged(event.group);
+            break;
+          case 'group.deleted':
+            // Deleted here or in another window: either way this page has nothing left to show.
+            groupDeleted(groupId);
             break;
         }
       },

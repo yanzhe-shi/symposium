@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { HumanTerminal } from '../commands/terminal.js';
 import type { AppContext } from '../context.js';
 import { notFound } from '../errors.js';
 import { postNotice } from '../chat.js';
@@ -6,7 +7,9 @@ import { prepareRepository } from '../git/repository.js';
 import { prepareProjectFolder } from '../project-folder.js';
 import type { CreateGroupRequest, Group, UpdateGroupRequest } from '../protocol.js';
 import type { TeamRunner } from '../routing/runner.js';
-import { createGroup, getGroup, listGroups, updateGroup } from '../store/groups.js';
+import { listAgents } from '../store/agents.js';
+import { createGroup, deleteGroup, getGroup, listGroups, updateGroup } from '../store/groups.js';
+import { removeGroupFiles } from '../workflow.js';
 
 export const MAX_ROUNDS_LIMIT = 10;
 export const MAX_PARALLEL_LIMIT = 8;
@@ -22,6 +25,7 @@ export function registerGroupRoutes(
   app: FastifyInstance,
   ctx: AppContext,
   runner: TeamRunner,
+  terminal: HumanTerminal,
 ): void {
   app.get('/api/groups', async () => listGroups(ctx.db));
 
@@ -89,4 +93,16 @@ export function registerGroupRoutes(
       return group;
     },
   );
+
+  // Deletes the group for good: its chat, team, audit log, agent memory and worktrees. Only the
+  // human can ask for this. The project folder and its git branches are never touched.
+  app.delete<{ Params: { groupId: string } }>('/api/groups/:groupId', async (request) => {
+    const group = requireGroup(ctx, request.params.groupId);
+    await Promise.all([runner.dropGroup(group.id), terminal.stopGroup(group.id)]);
+    const agents = listAgents(ctx.db, group.id, { includeFired: true });
+    await removeGroupFiles(ctx, group, agents);
+    deleteGroup(ctx.db, group.id);
+    ctx.hub.broadcast(group.id, { type: 'group.deleted' });
+    return { deleted: true };
+  });
 }

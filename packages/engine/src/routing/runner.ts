@@ -278,23 +278,29 @@ export class TeamRunner {
 
   /** Stops every group. Called when the server shuts down. */
   async shutdown(): Promise<void> {
-    await Promise.all(
-      [...this.groups].map(async ([groupId, work]) => {
-        work.stopping = true;
-        const winding: Promise<void>[] = [];
-        for (const inbox of work.inboxes.values()) {
-          inbox.queue = [];
-          inbox.turn?.controller.abort();
-          if (inbox.turn) winding.push(inbox.turn.done);
-        }
-        if (work.scribe) {
-          work.scribe.controller.abort();
-          winding.push(work.scribe.done);
-        }
-        await Promise.all(winding);
-        this.groups.delete(groupId);
-      }),
-    );
+    await Promise.all([...this.groups.keys()].map((groupId) => this.dropGroup(groupId)));
+  }
+
+  /**
+   * Stops a group's work without a word in the chat and forgets the group. Used when the
+   * server shuts down and when the human deletes the group.
+   */
+  async dropGroup(groupId: string): Promise<void> {
+    const work = this.groups.get(groupId);
+    if (!work) return;
+    work.stopping = true;
+    const winding: Promise<void>[] = [];
+    for (const inbox of work.inboxes.values()) {
+      inbox.queue = [];
+      inbox.turn?.controller.abort();
+      if (inbox.turn) winding.push(inbox.turn.done);
+    }
+    if (work.scribe) {
+      work.scribe.controller.abort();
+      winding.push(work.scribe.done);
+    }
+    await Promise.all(winding);
+    this.groups.delete(groupId);
   }
 
   /** Resolves when the group has nothing running, waiting or scheduled. For tests. */
