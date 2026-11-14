@@ -4,10 +4,10 @@ This guide gets Symposium running on your machine and walks you through a first 
 
 ## 1. Install the basics
 
-| Tool | Version | Check with |
-| --- | --- | --- |
-| Node.js | 22 or newer | `node --version` |
-| git | 2.28 or newer | `git --version` |
+| Tool    | Version       | Check with       |
+| ------- | ------------- | ---------------- |
+| Node.js | 22 or newer   | `node --version` |
+| git     | 2.28 or newer | `git --version`  |
 
 Then, from the Symposium folder:
 
@@ -51,7 +51,7 @@ An Antigravity agent with a terminal is run through `agy acp` instead, because p
 1. Install [Ollama](https://ollama.com) and pull a model, for example `ollama pull llama3.2`.
 2. When hiring, choose **OpenAI-compatible API**, leave the base URL empty (it defaults to `http://localhost:11434/v1`) and enter the model name.
 
-For a hosted API, set the base URL (for example `https://api.openai.com/v1`), and in **API key environment variable** enter the variable's *name*, such as `OPENAI_API_KEY`. Export that variable in the shell you start Symposium from. Symposium reads it when calling the API and never stores it.
+For a hosted API, set the base URL (for example `https://api.openai.com/v1`), and in **API key environment variable** enter the variable's _name_, such as `OPENAI_API_KEY`. Export that variable in the shell you start Symposium from. Symposium reads it when calling the API and never stores it.
 
 API agents are text only: they plan and review well, but they cannot edit files or run commands. Use a CLI provider for workers.
 
@@ -67,13 +67,13 @@ symposium
 
 This starts Symposium on your machine and opens <http://localhost:4400> in your browser. Nothing is reachable from other computers. Stop it with `Ctrl+C`, or with `symposium stop` from another terminal.
 
-| Command | What it does |
-| --- | --- |
-| `symposium` | Start and open the browser. If it is already running, just open the browser |
-| `symposium --no-open` | Start without opening the browser |
-| `symposium --port 5000` | Use another port |
-| `symposium status` | Say whether it is running |
-| `symposium stop` | Stop it |
+| Command                 | What it does                                                                |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `symposium`             | Start and open the browser. If it is already running, just open the browser |
+| `symposium --no-open`   | Start without opening the browser                                           |
+| `symposium --port 5000` | Use another port                                                            |
+| `symposium status`      | Say whether it is running                                                   |
+| `symposium stop`        | Stop it                                                                     |
 
 Started from the applications menu, Symposium runs in the background: use `symposium stop` to end it.
 
@@ -93,7 +93,7 @@ The first screen shows what Symposium found on your computer: git, the agent pro
 
 To make merging work, keep your project folder on its base branch (shown in the header). If you have uncommitted changes in the folder that touch the same files, git refuses the merge and Symposium tells you why. Nothing is changed in that case.
 
-[examples/team.md](../examples/team.md) has a ready-made team and first message.
+[examples/team.md](examples/team.md) has a ready-made team and first message.
 
 ## Steering the team
 
@@ -136,17 +136,17 @@ Set `SYMPOSIUM_HOME` to keep this data somewhere else.
 
 ## Troubleshooting
 
-| Problem | What to do |
-| --- | --- |
-| "Command not found: claude" or "agy" | Install the CLI, or give its full path in **CLI path** when hiring. |
-| An agent "could not finish" | The message includes the provider's error. Often the CLI is logged out: run it once in a terminal. |
-| "Your project folder has X checked out" | Check out the base branch in the project folder, then merge again. |
-| "Merging … conflicts" | Nothing was changed. Ask the worker to rework the change, or discard it. |
-| "… is inside the git repo at …" | Use the repo's top folder as the project folder. |
-| The UI says "Reconnecting…" | The engine stopped. Run `symposium` again. |
-| `symposium: command not found` | Add `~/.local/bin` to your PATH, or start it with its full path, which the install script prints. |
-| "The chat page has not been built yet" | Run `scripts/install.sh`, or `pnpm install && pnpm build`. |
-| "Port 4400 is used by another program" | Start with `symposium --port 4401`. |
-| An agent waits and nothing happens | Look for a command card waiting for your answer. After 10 minutes without one the command is refused. |
+| Problem                                                | What to do                                                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| "Command not found: claude" or "agy"                   | Install the CLI, or give its full path in **CLI path** when hiring.                                    |
+| An agent "could not finish"                            | The message includes the provider's error. Often the CLI is logged out: run it once in a terminal.     |
+| "Your project folder has X checked out"                | Check out the base branch in the project folder, then merge again.                                     |
+| "Merging … conflicts"                                  | Nothing was changed. Ask the worker to rework the change, or discard it.                               |
+| "… is inside the git repo at …"                        | Use the repo's top folder as the project folder.                                                       |
+| The UI says "Reconnecting…"                            | The engine stopped. Run `symposium` again.                                                             |
+| `symposium: command not found`                         | Add `~/.local/bin` to your PATH, or start it with its full path, which the install script prints.      |
+| "The chat page has not been built yet"                 | Run `scripts/install.sh`, or `pnpm install && pnpm build`.                                             |
+| "Port 4400 is used by another program"                 | Start with `symposium --port 4401`.                                                                    |
+| An agent waits and nothing happens                     | Look for a command card waiting for your answer. After 10 minutes without one the command is refused.  |
 | An Antigravity agent says it "stopped without a reply" | You denied its command, and Antigravity ends its turn when that happens. Message it again to carry on. |
-| "The `code` command was not found" | In VS Code, open the Command Palette and run "Shell Command: Install 'code' command in PATH". |
+| "The `code` command was not found"                     | In VS Code, open the Command Palette and run "Shell Command: Install 'code' command in PATH".          |

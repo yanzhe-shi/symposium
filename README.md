@@ -44,7 +44,7 @@ Then:
 4. When a worker asks to run a command, such as the tests, allow or deny it in the chat.
 5. Review each diff in the chat and click **Merge** or **Discard**.
 
-See [docs/SETUP.md](docs/SETUP.md) for the full setup guide, and [examples/team.md](examples/team.md) for a sample team and first message.
+See [SETUP.md](SETUP.md) for the full setup guide, and [examples/team.md](examples/team.md) for a sample team and first message.
 
 ## How it works
 
@@ -133,7 +133,6 @@ packages/
 roles/        Built-in role descriptions
 bin/          The `symposium` command
 scripts/      install.sh
-docs/         Plan and setup guide
 ```
 
 To add a provider, implement `AgentAdapter` in `packages/adapters` and register it in `registry.ts`. The engine never calls a provider directly.

@@ -6,3 +6,6 @@ coverage/
 *.db-wal
 *.tsbuildinfo
 .vite/
+
+# Working notes kept on the maintainer's machine only. The user guide is SETUP.md.
+docs/

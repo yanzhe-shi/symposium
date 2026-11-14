@@ -118,7 +118,7 @@ if command -v agy >/dev/null 2>&1; then
 else
   echo "Antigravity (agy): not found"
 fi
-[ "$FOUND" -eq 1 ] || echo "No agent CLI yet. You can still look around with the Mock provider. See docs/SETUP.md, step 2."
+[ "$FOUND" -eq 1 ] || echo "No agent CLI yet. You can still look around with the Mock provider. See SETUP.md, step 2."
 
 say "Done"
 case ":$PATH:" in
