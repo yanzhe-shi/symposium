@@ -21,7 +21,7 @@ import { changedBetween, parsePorcelainZ, reportingFileChanges } from './file-ch
 import { MockAdapter } from './mock.js';
 import { listModels, parseAgyModels } from './models.js';
 import { OpenAICompatibleAdapter } from './openai-compatible.js';
-import { cleanTerminalOutput, commandExists, runProcess } from './process.js';
+import { cleanTerminalOutput, commandExists, runProcess, TurnClock } from './process.js';
 import { createAdapter, PROVIDERS } from './registry.js';
 import { AdapterError, CancelledError, type AgentEvent, type AgentTask } from './types.js';
 
@@ -100,6 +100,28 @@ describe('runProcess', () => {
     await expect(
       runProcess({ command: 'sleep', args: ['10'], cwd: dir, timeoutMs: 100 }),
     ).rejects.toThrow(/timed out/);
+  });
+
+  it('stops the clock while the caller waits for something else', async () => {
+    const clock = new TurnClock(150);
+    const running = runProcess({ command: 'sleep', args: ['0.5'], cwd: dir, clock });
+    // The whole run falls inside the wait, so the 150 ms are never used up.
+    await clock.whilePaused(() => running);
+    await expect(running).resolves.toMatchObject({ exitCode: 0 });
+  });
+
+  it('times out once the clock runs again, counting only the time it ran', async () => {
+    const clock = new TurnClock(200);
+    const started = Date.now();
+    const running = runProcess({ command: 'sleep', args: ['10'], cwd: dir, clock });
+    running.catch(() => undefined);
+    // Two waits that overlap count as one.
+    await Promise.all([
+      clock.whilePaused(() => new Promise((resolve) => setTimeout(resolve, 300))),
+      clock.whilePaused(() => new Promise((resolve) => setTimeout(resolve, 150))),
+    ]);
+    await expect(running).rejects.toThrow(/timed out after 0s/);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(480);
   });
 
   it('hands over each line of output as it arrives, even when a line comes in pieces', async () => {

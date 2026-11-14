@@ -216,6 +216,19 @@ function onMessage(message) {
     expect(JSON.parse(readFileSync(join(dir, 'args.json'), 'utf8'))).toContain('stdio');
   });
 
+  it('does not count the wait for an answer toward the turn’s time', async () => {
+    env();
+    // The human takes longer to answer than the whole turn may last.
+    const slow = async (): Promise<CommandDecision> => {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      return { allow: true };
+    };
+    const reply = await new ClaudeCodeAdapter(fakeNodeCli('claude', FAKE_CLAUDE)).run(
+      task(slow, { timeoutMs: 600 }),
+    );
+    expect(reply.text).toBe('Tests ran: deny');
+  });
+
   it('reports a failing command with its exit code', async () => {
     env({ FAIL: '1' });
     const t = task(() => ({ allow: true }));

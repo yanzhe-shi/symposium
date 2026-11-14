@@ -10,7 +10,7 @@ import {
   toolEvent,
   type ToolKind,
 } from './events.js';
-import { runProcess, type ProcessStdin } from './process.js';
+import { pausingForApproval, runProcess, TurnClock, type ProcessStdin } from './process.js';
 import {
   AdapterError,
   DEFAULT_TIMEOUT_MS,
@@ -373,13 +373,16 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   constructor(private readonly command = 'claude') {}
 
-  async run(task: AgentTask): Promise<AgentReply> {
+  async run(original: AgentTask): Promise<AgentReply> {
+    // Time spent waiting for the human to allow a command does not count toward the turn.
+    const clock = new TurnClock(original.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const task = pausingForApproval(original, clock);
     const options = {
       command: this.command,
       args: claudeCodeArgs(task),
       cwd: task.workingDirectory,
       signal: task.signal,
-      timeoutMs: task.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      clock,
     };
     let result;
     if (offersCommands(task)) {

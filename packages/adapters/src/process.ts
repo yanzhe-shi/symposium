@@ -3,7 +3,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { delimiter, isAbsolute, join } from 'node:path';
-import { AdapterError, CancelledError } from './types.js';
+import { AdapterError, CancelledError, type AgentTask } from './types.js';
 
 export interface ProcessOptions {
   command: string;
@@ -14,6 +14,8 @@ export interface ProcessOptions {
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** The turn's own clock, for a caller that pauses it. Replaces `timeoutMs`. */
+  clock?: TurnClock;
   /** Called with each complete line of stdout as it arrives, for CLIs that stream progress. */
   onStdoutLine?: (line: string) => void;
   /**
@@ -35,12 +37,70 @@ export interface ProcessResult {
   exitCode: number | null;
 }
 
+/**
+ * How long a turn may take, as a clock that can be paused. An agent that waits for the human
+ * to allow a command is not working, so that wait does not count toward the turn's time.
+ */
+export class TurnClock {
+  private remainingMs: number;
+  private runningSince: number | undefined;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private onExpire: (() => void) | undefined;
+  /** How many waits are going on. The clock runs only while there are none. */
+  private pauses = 0;
+
+  constructor(readonly timeoutMs: number) {
+    this.remainingMs = timeoutMs;
+  }
+
+  /** Starts the clock. `onExpire` is called once the time is used up. */
+  start(onExpire: () => void): void {
+    this.onExpire = onExpire;
+    if (this.pauses === 0) this.run();
+  }
+
+  stop(): void {
+    clearTimeout(this.timer);
+    this.onExpire = undefined;
+    this.runningSince = undefined;
+  }
+
+  /** Runs `wait` with the clock stopped, however it ends. */
+  async whilePaused<T>(wait: () => Promise<T>): Promise<T> {
+    this.pauses += 1;
+    if (this.pauses === 1 && this.runningSince !== undefined) {
+      clearTimeout(this.timer);
+      this.remainingMs -= Date.now() - this.runningSince;
+      this.runningSince = undefined;
+    }
+    try {
+      return await wait();
+    } finally {
+      this.pauses -= 1;
+      if (this.pauses === 0 && this.onExpire) this.run();
+    }
+  }
+
+  private run(): void {
+    this.runningSince = Date.now();
+    this.timer = setTimeout(() => this.onExpire?.(), Math.max(0, this.remainingMs));
+  }
+}
+
+/** The same task, except that the turn's clock stands still while a command awaits its answer. */
+export function pausingForApproval(task: AgentTask, clock: TurnClock): AgentTask {
+  const { onCommand } = task;
+  if (!onCommand) return task;
+  return { ...task, onCommand: (request) => clock.whilePaused(() => onCommand(request)) };
+}
+
 const MAX_OUTPUT_BYTES = 20 * 1024 * 1024;
 const KILL_GRACE_MS = 3000;
 
 /** Runs a command without a shell and collects its output. Rejects on abort, timeout or spawn failure. */
 export function runProcess(options: ProcessOptions): Promise<ProcessResult> {
   const { command, args, cwd, input, env, signal, timeoutMs, onStdoutLine, onStart } = options;
+  const clock = options.clock ?? (timeoutMs === undefined ? undefined : new TurnClock(timeoutMs));
   if (signal?.aborted) return Promise.reject(new CancelledError());
 
   return new Promise((resolve, reject) => {
@@ -53,12 +113,11 @@ export function runProcess(options: ProcessOptions): Promise<ProcessResult> {
     const stderr: Buffer[] = [];
     let outputBytes = 0;
     let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
 
     function finish(error: Error | undefined, result?: ProcessResult): void {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      clock?.stop();
       signal?.removeEventListener('abort', onAbort);
       if (error) reject(error);
       else resolve(result!);
@@ -89,12 +148,10 @@ export function runProcess(options: ProcessOptions): Promise<ProcessResult> {
     }
 
     signal?.addEventListener('abort', onAbort, { once: true });
-    if (timeoutMs !== undefined) {
-      timer = setTimeout(() => {
-        stop();
-        finish(new AdapterError(`${command} timed out after ${Math.round(timeoutMs / 1000)}s`));
-      }, timeoutMs);
-    }
+    clock?.start(() => {
+      stop();
+      finish(new AdapterError(`${command} timed out after ${Math.round(clock.timeoutMs / 1000)}s`));
+    });
 
     child.stdout.on('data', collect(stdout));
     child.stderr.on('data', collect(stderr));

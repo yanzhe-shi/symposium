@@ -10,7 +10,7 @@ import {
   toolEvent,
   type ToolKind,
 } from './events.js';
-import { runProcess, type ProcessStdin } from './process.js';
+import { pausingForApproval, runProcess, TurnClock, type ProcessStdin } from './process.js';
 import {
   AdapterError,
   CancelledError,
@@ -323,7 +323,10 @@ async function converse(
  * Runs one turn through `agy acp`, the Agent Client Protocol server built into `agy`. Unlike
  * print mode it asks before running a command, so the engine can decide each one.
  */
-export async function runAntigravityAcp(command: string, task: AgentTask): Promise<AgentReply> {
+export async function runAntigravityAcp(command: string, original: AgentTask): Promise<AgentReply> {
+  // Time spent waiting for the human to allow a command does not count toward the turn.
+  const clock = new TurnClock(original.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const task = pausingForApproval(original, clock);
   const turn = new AcpTurn(task);
   // Lets go of a process that stays up after the turn is over.
   const finished = new AbortController();
@@ -339,7 +342,7 @@ export async function runAntigravityAcp(command: string, task: AgentTask): Promi
       args: ['acp', '--sandbox'],
       cwd: task.workingDirectory,
       signal: AbortSignal.any(signals),
-      timeoutMs: task.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      clock,
       onStart: (stdin) => {
         const opened = new AcpConnection(stdin, {
           onRequest: (method, params) => turn.onRequest(method, params),
