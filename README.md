@@ -9,8 +9,9 @@ Each group chat is one project folder. You add agents from any provider (Claude 
 ## What it does
 
 - **A chat per project.** Create a group linked to a folder: a new one that Symposium suggests, or a project you already have. Symposium makes it a git repo if it isn't one.
-- **Hire a team.** A lead plans the work and assigns it, workers build it, a reviewer checks it, and a scribe keeps `project.md` current.
-- **@mentions route the work.** Your message goes to the agents you mention, or to the lead. Agents hand work to each other the same way.
+- **Hire a team.** A lead plans the work and assigns it, workers build it, a reviewer checks it, and a scribe keeps `project.md` current. A new group can start with such a team already hired.
+- **Roles you can write.** Rewrite the built-in job descriptions or add your own roles, such as a designer or a tester. Your lead can write a role too and propose someone for it; you approve.
+- **@mentions route the work.** Your message goes to the agents you mention, or to the lead. Agents hand work to each other the same way, and an answer finds its way back to whoever asked.
 - **Agents work in parallel.** Every agent has an inbox and works through it one turn at a time, while its teammates do the same. You set how many may work at once (3 by default).
 - **Talk at any time.** A new message never stops anyone. A busy agent gets it in its next turn; the chat shows it as "queued for Ada" until then.
 - **Round limits.** Each message you send starts a thread. After 6 hand-offs between agents in a thread (you can change this), that thread waits for you. Other threads carry on.
@@ -24,17 +25,21 @@ Each group chat is one project folder. You add agents from any provider (Claude 
 
 ## Quick start
 
-You need Node.js 22 or newer, [pnpm](https://pnpm.io), git, and at least one agent provider: the `claude` CLI, the `agy` CLI, or an OpenAI-compatible API (Ollama works). To try it without any of these, hire agents with the **Mock** provider.
+You need Node.js 22 or newer and git. For real work you also need at least one agent provider: the `claude` CLI, the `agy` CLI, or an OpenAI-compatible API (Ollama works). Without one you can still look around with the **Mock** provider.
+
+On Linux, macOS or Windows with WSL, from this folder:
 
 ```sh
-pnpm install
-pnpm dev
+scripts/install.sh
+symposium
 ```
 
-Then open <http://localhost:5173>:
+The first command fetches the packages, builds the chat page and adds a `symposium` command (on Linux also an entry in your applications menu). The second starts Symposium and opens it in your browser at <http://localhost:4400>. Everything runs on your own machine. `symposium stop` stops it.
+
+Then:
 
 1. Create a group: give it a name. Symposium suggests a new folder in `~/symposium-projects`; type or **Browse…** to use another, such as a project you already have.
-2. In the **Team** panel, hire a **lead** (for example Claude Code, `sonnet`), one or two **workers** and a **scribe** on a small model (`haiku`).
+2. Keep the suggested **team** (a lead, a worker, a reviewer and a scribe on the agent program found on your computer), or start empty and hire in the **Team** panel.
 3. Tell the lead what you want to build. It replies with a plan; approve it, and the work begins.
 4. When a worker asks to run a command, such as the tests, allow or deny it in the chat.
 5. Review each diff in the chat and click **Merge** or **Discard**.
@@ -51,7 +56,7 @@ The code owns the rules, the lead owns the decisions, and you own the approvals.
 | Lead agent    | How to split the work, who does each task, when work is good enough                                     |
 | You           | Hires, plans, merges, commands, stopping the team                                                       |
 
-**Routing.** A message from you goes to the agents it @mentions, or to the lead if it mentions nobody. An agent's reply goes to the agents it @mentions. Each agent works through its own inbox one turn at a time, and different agents work in parallel, up to the group's cap. Messages that arrive while an agent is busy reach it together in its next turn. Each agent-to-agent hand-off is one round in the thread your message started, and the round limit stops runaway conversations.
+**Routing.** A message from you goes to the agents it @mentions, or to the lead if it mentions nobody. An agent's reply goes to the agents it @mentions. A reply that mentions nobody goes back to the teammate who asked for it, so one agent can call another and get the answer. The lead's unaddressed replies are for you. Each agent works through its own inbox one turn at a time, and different agents work in parallel, up to the group's cap. Messages that arrive while an agent is busy reach it together in its next turn. Each agent-to-agent hand-off is one round in the thread your message started, and the round limit stops runaway conversations.
 
 **Context.** The lead sees the whole recent chat. Other agents see `project.md`, their own memory, and only the messages that mention them, plus diffs waiting for review. This keeps cost down as the team grows.
 
@@ -64,7 +69,7 @@ The code owns the rules, the lead owns the decisions, and you own the approvals.
 | Reviewer | The project folder                                 | No, read only                                                 | Off              |
 | Scribe   | No tools                                           | No. It returns the new `project.md`, and the engine writes it | Never            |
 
-Built-in role descriptions live in [`roles/`](roles). Add a specialty when you hire an agent to make it, say, a frontend or database specialist.
+Built-in role descriptions live in [`roles/`](roles). **Roles** in the Team panel lets you rewrite them and add roles of your own. A custom role works like one of the four above, which sets what the engine lets its agents do; the job description is yours. Roles you write or change are kept in `~/.symposium/roles`. Add a specialty when you hire an agent to make it, say, a frontend or database specialist.
 
 **Terminal commands.** Each agent has one of four modes. The engine decides every command; no model does.
 
@@ -113,6 +118,7 @@ Agents run on your machine with your logins, so the safe choice is the default.
 
 ```sh
 pnpm dev        # engine on :4400 and UI on :5173, with reload
+pnpm build      # builds the chat page, which `symposium` then serves on :4400
 pnpm test       # all tests (Vitest). They use the mock adapter and never call a real provider
 pnpm lint
 pnpm typecheck
@@ -125,6 +131,8 @@ packages/
   adapters/   The AgentAdapter interface and one adapter per provider
   ui/         React chat app (Vite)
 roles/        Built-in role descriptions
+bin/          The `symposium` command
+scripts/      install.sh
 docs/         Plan and setup guide
 ```
 

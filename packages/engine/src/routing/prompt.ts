@@ -151,7 +151,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       agent.role === 'lead'
         ? '- If you mention nobody, your reply is for the CEO and nobody else is asked to act. To answer a teammate, @mention them.'
         : '- If you mention nobody, your reply goes back to whoever asked you: the teammate whose message you are answering, or the CEO. You never need to mention the one who asked.',
-      '- Never mention yourself. The CEO needs no mention.',
+      '- Never mention yourself. Never write "@CEO": the CEO reads every message, so just say what you have to say.',
       '- Teammates work at the same time, and the CEO can write at any moment without stopping anyone. Messages that arrive while you work reach you together in your next turn: answer them all in one reply.',
       '- Keep replies short and concrete. No greetings or sign-offs.',
       accessRules(access, branch, terminal),

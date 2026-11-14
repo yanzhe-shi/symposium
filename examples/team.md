@@ -1,6 +1,6 @@
 # Example team
 
-A small team for building a web app. Hire these in the Team panel, in this order.
+A small team for building a web app. A new group can start with Lea, Ada, Rex and Sam already hired (the **Team** choice when you create it); add Gio in the Team panel. Or hire all five yourself, in this order.
 
 | Name | Role     | Provider    | Model                     | Specialty                              |
 | ---- | -------- | ----------- | ------------------------- | -------------------------------------- |

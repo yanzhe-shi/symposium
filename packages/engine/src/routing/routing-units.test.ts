@@ -54,6 +54,13 @@ describe('parseMentions', () => {
 });
 
 describe('parseReplyBlocks', () => {
+  it('drops an opening "@CEO", which the human does not need', () => {
+    expect(parseReplyBlocks('@CEO: The plan is ready.').text).toBe('The plan is ready.');
+    expect(parseReplyBlocks('@ceo, done.\n@Ada next').text).toBe('done.\n@Ada next');
+    expect(parseReplyBlocks('Tell @CEO nothing').text).toBe('Tell @CEO nothing');
+    expect(parseReplyBlocks('@CEOs are people').text).toBe('@CEOs are people');
+  });
+
   it('removes memory and hire blocks and collects their contents', () => {
     const reply = [
       'Plan ready.',

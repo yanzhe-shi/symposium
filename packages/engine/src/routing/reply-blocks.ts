@@ -37,7 +37,11 @@ export function parseReplyBlocks(reply: string): ParsedReply {
   });
 
   return {
-    text: text.replace(/\n{3,}/g, '\n\n').trim(),
+    text: text
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+      // Small models open with "@CEO:" although the human needs no mention. It reads oddly.
+      .replace(/^@(?:CEO|You)\b[:,]?\s*/i, ''),
     memoryNotes,
     hireProposals,
     roleDrafts,
