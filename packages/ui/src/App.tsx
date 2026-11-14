@@ -1,4 +1,4 @@
-import type { Group, ProviderInfo, RoleInfo } from '@symposium/engine/protocol';
+import type { Group, ProviderInfo, RoleInfo, SystemInfo } from '@symposium/engine/protocol';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from './api.ts';
 import { GroupView } from './components/GroupView.tsx';
@@ -10,6 +10,8 @@ const SELECTED_GROUP_KEY = 'symposium.selectedGroup';
 export interface Catalog {
   providers: ProviderInfo[];
   roles: RoleInfo[];
+  /** What is installed here. Undefined if the engine could not say. */
+  system: SystemInfo | undefined;
   /** Reads the roles again, after one was added, changed or removed. */
   reloadRoles: () => Promise<void>;
 }
@@ -23,11 +25,13 @@ export function App() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.groups(), api.providers(), api.roles()])
-      .then(([loadedGroups, providers, roles]) => {
+    // The checks are a help, not a need: without them the app still works.
+    const system = api.system().catch(() => undefined);
+    Promise.all([api.groups(), api.providers(), api.roles(), system])
+      .then(([loadedGroups, providers, roles, systemInfo]) => {
         if (!active) return;
         setGroups(loadedGroups);
-        setCatalog({ providers, roles });
+        setCatalog({ providers, roles, system: systemInfo });
       })
       .catch((err: unknown) => {
         if (active) setError(`Could not reach the engine: ${String(err)}`);
@@ -74,6 +78,8 @@ export function App() {
         {showForm ? (
           <NewGroupForm
             firstGroup={groups.length === 0}
+            providers={catalog.providers}
+            system={catalog.system}
             onCancel={groups.length > 0 ? () => setCreating(false) : undefined}
             onCreated={(group) => {
               setGroups((current) => [...(current ?? []), group]);

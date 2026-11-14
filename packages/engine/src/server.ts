@@ -13,6 +13,7 @@ import type { AdapterFactory, AppContext } from './context.js';
 import type { Db } from './db/database.js';
 import { localhostGuard } from './localhost-guard.js';
 import { RoleStore } from './roles.js';
+import { registerUi } from './static-ui.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerFileRoutes } from './routes/files.js';
@@ -31,6 +32,8 @@ export interface ServerDeps {
   db: Db;
   dataDir: string;
   rolesDir?: string;
+  /** The built chat page to serve. Left out, the engine serves the API only. */
+  uiDir?: string;
   /** Where new projects go unless the human picks another folder. */
   projectsDir?: string;
   /** The command that starts VS Code. Tests pass a stand-in. */
@@ -94,7 +97,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.addHook('onRequest', localhostGuard);
   await app.register(websocket);
 
-  registerHealthRoutes(app);
+  registerHealthRoutes(app, ctx);
   registerGroupRoutes(app, ctx, runner, terminal);
   registerAgentRoutes(app, ctx, runner);
   registerRoleRoutes(app, ctx);
@@ -104,6 +107,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerFileRoutes(app, ctx);
   registerFolderRoutes(app, ctx);
   registerChatSocket(app, ctx);
+  // Last, so every route above wins over the page's catch-all.
+  if (deps.uiDir) registerUi(app, deps.uiDir);
 
   return app;
 }

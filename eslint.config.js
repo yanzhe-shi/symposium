@@ -11,6 +11,11 @@ export default tseslint.config(
     ...reactHooks.configs.flat['recommended-latest'],
   },
   {
+    // Plain Node scripts, which are not type-checked and so need their globals named.
+    files: ['bin/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+  },
+  {
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',

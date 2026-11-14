@@ -80,7 +80,10 @@ interface ModelLookup {
 
 /** Hires a new agent, or changes one already on the team without firing it. */
 export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProps) {
-  const firstProvider = catalog.providers[0]!;
+  // A provider whose program is installed is a better first guess than one that is not.
+  const installed = (id: ProviderId): boolean => catalog.system?.providers[id] ?? true;
+  const firstProvider =
+    catalog.providers.find((p) => p.canEditFiles && installed(p.id)) ?? catalog.providers[0]!;
   const [name, setName] = useState(agent?.name ?? '');
   // The id of the role: a built-in kind or a custom role. A custom role that was deleted
   // shows as the built-in role of the agent's kind.
@@ -270,6 +273,7 @@ export function AgentForm({ group, team, catalog, agent, onDone }: AgentFormProp
           {catalog.providers.map((p) => (
             <option key={p.id} value={p.id}>
               {p.label}
+              {installed(p.id) ? '' : ' (not found on this computer)'}
             </option>
           ))}
         </select>

@@ -556,6 +556,43 @@ input.switch:checked::after {
   gap: 0.5rem;
 }
 
+.setup-checks {
+  padding: 0.7rem 0.9rem;
+  font-size: 0.88rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+}
+
+.setup-checks ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-checks li {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.setup-checks p {
+  margin-top: 0.6rem;
+}
+
+.check-mark {
+  flex-shrink: 0;
+  width: 1.1rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--muted);
+}
+
+.check-ok .check-mark {
+  color: var(--ok);
+}
+
 /* Group view */
 
 .group-view {

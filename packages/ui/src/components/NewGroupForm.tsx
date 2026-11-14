@@ -1,16 +1,97 @@
-import type { FolderChoices, Group } from '@symposium/engine/protocol';
+import type {
+  FolderChoices,
+  Group,
+  ProviderId,
+  ProviderInfo,
+  SystemInfo,
+} from '@symposium/engine/protocol';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api.ts';
 import { projectFolderFor } from '../text-format.ts';
+import { InlineText } from './RichText.tsx';
+
+/** The providers a starter team can be hired on. Mirrors STARTER_PROVIDERS in the engine. */
+const STARTER_PROVIDERS: ProviderId[] = ['claude-code', 'antigravity', 'mock'];
+const NO_TEAM = 'none';
+
+/** What a new user needs, and whether this computer has it. */
+function SetupChecks({ system }: { system: SystemInfo }) {
+  const checks: { label: string; ok: boolean; missing: string }[] = [
+    {
+      label: 'git',
+      ok: system.git,
+      missing: 'Needed. Install git with your package manager, then start Symposium again.',
+    },
+    {
+      label: 'Claude Code',
+      ok: system.providers['claude-code'],
+      missing: 'Install the `claude` command and log in once by running it in a terminal.',
+    },
+    {
+      label: 'Antigravity',
+      ok: system.providers.antigravity,
+      missing: 'Optional. Install the `agy` command and log in to use Gemini models.',
+    },
+    {
+      label: 'VS Code',
+      ok: system.vscode,
+      missing: 'Optional. Needed only for the Open in VS Code buttons.',
+    },
+  ];
+  const noAgents = !system.providers['claude-code'] && !system.providers.antigravity;
+  return (
+    <div className="setup-checks">
+      <ul>
+        {checks.map((check) => (
+          <li key={check.label} className={check.ok ? 'check-ok' : 'check-missing'}>
+            <span className="check-mark" aria-hidden>
+              {check.ok ? '✓' : '–'}
+            </span>
+            <span>
+              <strong>{check.label}</strong> {check.ok ? 'found' : 'not found'}
+              {!check.ok && (
+                <span className="muted">
+                  . <InlineText text={check.missing} />
+                </span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {noAgents && (
+        <p className="muted small">
+          No agent program was found. You can still look around with the Mock team, which answers
+          without any AI, or hire agents on a local model through an OpenAI-compatible API.
+        </p>
+      )}
+    </div>
+  );
+}
 
 interface NewGroupFormProps {
   firstGroup: boolean;
+  providers: ProviderInfo[];
+  /** What is installed here. Undefined if the engine could not say. */
+  system: SystemInfo | undefined;
   onCreated: (group: Group) => void;
   onCancel?: () => void;
 }
 
-export function NewGroupForm({ firstGroup, onCreated, onCancel }: NewGroupFormProps) {
+export function NewGroupForm({
+  firstGroup,
+  providers,
+  system,
+  onCreated,
+  onCancel,
+}: NewGroupFormProps) {
   const [name, setName] = useState('');
+  const teamChoices = providers.filter((provider) => STARTER_PROVIDERS.includes(provider.id));
+  // A team on the first agent program found here. With none installed, the human chooses.
+  const [team, setTeam] = useState<string>(
+    () =>
+      teamChoices.find((provider) => provider.id !== 'mock' && system?.providers[provider.id])
+        ?.id ?? NO_TEAM,
+  );
   // Undefined until the human types or picks a folder: until then it follows the name.
   const [chosenFolder, setChosenFolder] = useState<string>();
   const [projectsFolder, setProjectsFolder] = useState<string>();
@@ -40,7 +121,13 @@ export function NewGroupForm({ firstGroup, onCreated, onCancel }: NewGroupFormPr
     setBusy(true);
     setError(undefined);
     try {
-      onCreated(await api.createGroup({ name: name.trim(), folderPath: folderPath.trim() }));
+      onCreated(
+        await api.createGroup({
+          name: name.trim(),
+          folderPath: folderPath.trim(),
+          ...(team === NO_TEAM ? {} : { starterTeam: team as ProviderId }),
+        }),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -49,11 +136,18 @@ export function NewGroupForm({ firstGroup, onCreated, onCancel }: NewGroupFormPr
 
   return (
     <form className="panel-form centered-form" onSubmit={submit}>
-      <h1>{firstGroup ? 'Start your first project' : 'New group'}</h1>
+      <h1>{firstGroup ? 'Welcome to Symposium' : 'New group'}</h1>
       <p className="muted">
+        {firstGroup && 'Start your first project. '}
         Each group is one project: a chat, a folder and a team of agents you hire. Symposium creates
         the folder and a git repo if they don't exist yet.
       </p>
+      {system &&
+        (firstGroup ||
+          !system.git ||
+          (!system.providers['claude-code'] && !system.providers.antigravity)) && (
+          <SetupChecks system={system} />
+        )}
       <label>
         Name
         <input
@@ -97,6 +191,23 @@ export function NewGroupForm({ firstGroup, onCreated, onCancel }: NewGroupFormPr
             </button>
           </>
         )}
+      </p>
+      <label>
+        Team
+        <select value={team} onChange={(event) => setTeam(event.target.value)}>
+          {teamChoices.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              Lead, worker, reviewer and scribe on {provider.label}
+              {system && !system.providers[provider.id] ? ' (not found on this computer)' : ''}
+            </option>
+          ))}
+          <option value={NO_TEAM}>No team yet: I will hire them myself</option>
+        </select>
+      </label>
+      <p className="muted small">
+        {team === NO_TEAM
+          ? 'Hire a lead first in the Team panel, then the rest.'
+          : 'Lea, Ada, Rex and Sam are hired with the group. You can change their models and permissions, hire more or fire anyone in the Team panel.'}
       </p>
       {error && <p className="form-error">{error}</p>}
       <div className="form-actions">

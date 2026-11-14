@@ -18,6 +18,7 @@ import type {
   RoleDraft,
   RoleInfo,
   ServerEvent,
+  SystemInfo,
   TeamStatus,
   TerminalRun,
   UpdateAgentRequest,
@@ -67,6 +68,8 @@ export const api = {
     send<{ opened: string }>('POST', `${groupUrl(groupId)}/open`, target),
 
   providers: () => request<ProviderInfo[]>('/api/providers'),
+  /** What is installed on this machine: git, VS Code and each provider's program. */
+  system: () => request<SystemInfo>('/api/system'),
   /** The models a provider offers right now, asked with the agent's own provider options. */
   models: (providerId: ProviderId, options: ProviderOptions = {}) => {
     const query = new URLSearchParams(

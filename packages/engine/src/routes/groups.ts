@@ -9,6 +9,8 @@ import type { CreateGroupRequest, Group, UpdateGroupRequest } from '../protocol.
 import type { TeamRunner } from '../routing/runner.js';
 import { listAgents } from '../store/agents.js';
 import { createGroup, deleteGroup, getGroup, listGroups, updateGroup } from '../store/groups.js';
+import { STARTER_PROVIDERS, starterTeam } from '../system.js';
+import { hire } from '../team.js';
 import { removeGroupFiles } from '../workflow.js';
 
 export const MAX_ROUNDS_LIMIT = 10;
@@ -43,6 +45,7 @@ export function registerGroupRoutes(
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 80 },
             folderPath: { type: 'string', minLength: 1, maxLength: 1000 },
+            starterTeam: { type: 'string', enum: [...STARTER_PROVIDERS] },
           },
           additionalProperties: false,
         },
@@ -59,6 +62,10 @@ export function registerGroupRoutes(
         group.id,
         `Project folder: ${folderPath} (branch ${baseBranch}).${done} Workers get their own branch and worktree; nothing is merged without your approval.`,
       );
+      // The human asked for a team with the group, which is their approval of these hires.
+      if (request.body.starterTeam) {
+        for (const member of starterTeam(request.body.starterTeam)) hire(ctx, group, member);
+      }
       return reply.code(201).send(group);
     },
   );

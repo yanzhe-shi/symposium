@@ -299,6 +299,15 @@ export type ServerEvent =
   | { type: 'terminal.exit'; runId: string; exitCode: number | null }
   | { type: 'project.updated' };
 
+/** Answer of `GET /api/system`: what is installed on this machine. */
+export interface SystemInfo {
+  git: boolean;
+  /** Whether the `code` command is on PATH, for Open in VS Code. */
+  vscode: boolean;
+  /** Per provider, whether its program was found. API and mock providers need none. */
+  providers: Record<ProviderId, boolean>;
+}
+
 /** Body of `POST /api/groups/:id/terminal`: a command the human runs themselves. */
 export interface RunCommandRequest {
   /** `project`, or the id of an agent whose worktree to run in. */
@@ -345,6 +354,11 @@ export interface CreateMessageRequest {
 export interface CreateGroupRequest {
   name: string;
   folderPath: string;
+  /**
+   * Hire a starter team on this provider right away: a lead, a worker, a reviewer and a
+   * scribe. Left out, the group starts empty.
+   */
+  starterTeam?: ProviderId;
 }
 
 export interface UpdateGroupRequest {
