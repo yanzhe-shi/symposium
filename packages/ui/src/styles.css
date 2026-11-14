@@ -699,14 +699,15 @@ input.switch:checked::after {
 
 .group-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 348px;
+  /* `--side-width` is set once the human drags the divider. */
+  grid-template-columns: minmax(0, 1fr) var(--side-width, 348px);
   flex: 1;
   min-height: 0;
 }
 
 /* The Code tab needs room for a file tree and a file side by side. */
 .group-body-wide {
-  grid-template-columns: minmax(380px, 1fr) minmax(480px, 54%);
+  grid-template-columns: minmax(0, 1fr) var(--side-width, minmax(480px, 54%));
 }
 
 .chat-column {
@@ -726,6 +727,7 @@ input.switch:checked::after {
 }
 
 .side-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -774,9 +776,29 @@ input.switch:checked::after {
   border-radius: 999px;
 }
 
-.side-panel > :not(.tabs) {
+.side-panel > :not(.tabs, .resize-handle) {
   padding: 0.85rem;
   overflow-y: auto;
+}
+
+/* The divider between the chat and the side panel. */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  z-index: 5;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+  transition: background-color 0.12s;
+}
+
+.resize-handle:hover,
+.resize-handle:active,
+.resize-handle:focus-visible {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  outline: none;
 }
 
 /* Messages */

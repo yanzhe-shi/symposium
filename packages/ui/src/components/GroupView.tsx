@@ -1,8 +1,23 @@
 import type { Group, UpdateGroupRequest } from '@symposium/engine/protocol';
-import { useEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { api, type CodeLocation } from '../api.ts';
 import type { Catalog } from '../App.tsx';
 import { activeAgents, editingAgents, queuedFor, workingAgents } from '../group-state.ts';
+import {
+  clampSideWidth,
+  loadSideWidth,
+  MIN_CHAT_WIDTH,
+  MIN_SIDE_WIDTH,
+  saveSideWidth,
+  type SideLayout,
+} from '../side-width.ts';
 import { shortPath } from '../text-format.ts';
 import { useGroup } from '../use-group.ts';
 import { Avatar } from './Avatar.tsx';
@@ -128,6 +143,14 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
     view: 'files',
   });
   const [actionError, setActionError] = useState<string>();
+  // The side panel's width, when the human has dragged it. The Code tab keeps its own.
+  const [sideWidths, setSideWidths] = useState<Record<SideLayout, number | undefined>>(() => ({
+    narrow: loadSideWidth('narrow'),
+    wide: loadSideWidth('wide'),
+  }));
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const layout: SideLayout = panel === 'code' ? 'wide' : 'narrow';
+  const sideWidth = sideWidths[layout];
   const team = activeAgents(state);
   const working = workingAgents(state);
 
@@ -156,6 +179,28 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
     } catch (err) {
       setActionError(String(err));
     }
+  }
+
+  function resizeSide(wanted: number | undefined, remember: boolean): void {
+    const body = bodyRef.current;
+    if (!body) return;
+    const width = wanted === undefined ? undefined : clampSideWidth(wanted, body.clientWidth);
+    setSideWidths((current) => ({ ...current, [layout]: width }));
+    if (remember) saveSideWidth(layout, width);
+  }
+
+  function dragSide(event: ReactPointerEvent<HTMLDivElement>): void {
+    const body = bodyRef.current;
+    // While a button is held on the handle, the panel's left edge follows the pointer.
+    if (!body || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    resizeSide(body.getBoundingClientRect().right - event.clientX, event.type === 'pointerup');
+  }
+
+  function nudgeSide(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const current = sideWidth ?? event.currentTarget.parentElement!.clientWidth;
+    resizeSide(current + (event.key === 'ArrowLeft' ? 24 : -24), true);
   }
 
   const placeholder =
@@ -204,7 +249,18 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
         </div>
       </header>
 
-      <div className={panel === 'code' ? 'group-body group-body-wide' : 'group-body'}>
+      <div
+        ref={bodyRef}
+        className={panel === 'code' ? 'group-body group-body-wide' : 'group-body'}
+        style={
+          sideWidth === undefined
+            ? undefined
+            : // A narrower window than the one it was dragged in still leaves room for the chat.
+              ({
+                '--side-width': `max(${MIN_SIDE_WIDTH}px, min(${sideWidth}px, calc(100% - ${MIN_CHAT_WIDTH}px)))`,
+              } as CSSProperties)
+        }
+      >
         <section className="chat-column">
           {loadError && <p className="banner-error">Could not load the group: {loadError}</p>}
           {actionError && (
@@ -253,6 +309,19 @@ export function GroupView({ group, catalog, onGroupChanged }: GroupViewProps) {
         </section>
 
         <aside className="side-panel">
+          <div
+            className="resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the side panel"
+            title="Drag to resize. Double-click to reset."
+            tabIndex={0}
+            onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
+            onPointerMove={dragSide}
+            onPointerUp={dragSide}
+            onDoubleClick={() => resizeSide(undefined, true)}
+            onKeyDown={nudgeSide}
+          />
           <div className="tabs" role="tablist">
             <button
               type="button"

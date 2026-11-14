@@ -95,6 +95,7 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **Open in VS Code** (header) opens the project and every agent's worktree side by side. **VS Code** on an agent's card opens just its worktree, and the Code tab can open the file you are reading. This needs VS Code's `code` command on your PATH.
 - **project.md tab**: read or edit the shared project description.
 - **Memory**: read or edit what each agent has chosen to remember.
+- **Resize the side panel** by dragging the line between it and the chat. Double-click the line to reset it. The Code tab remembers its own width.
 - **Light and dark.** Symposium follows your system's setting. The round button at the bottom of the sidebar switches between system, light and dark.
 
 ## Where your data is
