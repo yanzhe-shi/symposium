@@ -160,6 +160,7 @@ export function createRunnerHooks(ctx: AppContext, approvals: CommandApprovals):
       );
       // Outside the git queue: a slow test run must not hold up the other agents' commits.
       if (card) await checkWork(ctx, group, agent, workspace, card, signal);
+      return card;
     },
     onIdle: async (group, signal) => {
       await updateProjectFile(ctx, group, signal);

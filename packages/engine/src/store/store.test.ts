@@ -20,6 +20,7 @@ describe('groups store', () => {
       maxParallel: 3,
       leadAsksFirst: true,
       checkCommand: '',
+      autoReview: true,
       createdAt: 1000,
     });
     expect(getGroup(db, 'missing')).toBeUndefined();

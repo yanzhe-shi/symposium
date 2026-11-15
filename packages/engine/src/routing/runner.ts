@@ -19,6 +19,7 @@ import type {
   Group,
   HireRequest,
   Message,
+  ReviewResult,
   RoleDraft,
   TeamStatus,
   WorktreeChanges,
@@ -46,8 +47,9 @@ export interface RunnerHooks {
   prepareWorkspace(group: Group, agent: Agent): Promise<Workspace>;
   /**
    * Called after each successful turn, e.g. to commit a worker's changes, post the diff and
-   * run the project's check on it. The reply is handed on only when this has finished, so
-   * whoever reads it next also sees how the check went. `signal` fires when the agent is stopped.
+   * run the project's check on it. Returns the diff's message when the turn changed files.
+   * The reply is handed on only when this has finished, so whoever reads it next also sees
+   * how the check went. `signal` fires when the agent is stopped.
    */
   afterTurn(
     group: Group,
@@ -55,7 +57,7 @@ export interface RunnerHooks {
     workspace: Workspace,
     reply: Message,
     signal: AbortSignal,
-  ): Promise<void>;
+  ): Promise<Message | undefined>;
   /** Called once the whole group has been idle for a while, to let the scribe update project.md. */
   onIdle(group: Group, signal: AbortSignal): Promise<void>;
   /**
@@ -115,6 +117,25 @@ interface AgentInbox {
   interrupted: boolean;
 }
 
+/** A review the engine asks for by itself: a reviewer judges a worker's new change. */
+interface ReviewJob {
+  worker: Agent;
+  /** The diff's message. */
+  card: Message;
+  /** The worker's worktree, which the reviewer reads. */
+  cwd: string;
+}
+
+/** What a finished turn left behind. */
+interface TurnResult {
+  reply: Message;
+  workspace: Workspace;
+  /** The diff's message, when the turn changed files. */
+  change?: Message;
+  /** A reviewer's verdict, from a review turn. */
+  verdict?: 'approved' | 'changes';
+}
+
 interface ScribeJob {
   controller: AbortController;
   /** True during the quiet period before the scribe starts. */
@@ -131,6 +152,12 @@ interface GroupWork {
   stopping: boolean;
   /** The last `run.status` the UI was sent. */
   announcedRunning: boolean;
+  /** Reviewers that are on a review turn right now. Those turns are not in any inbox. */
+  reviewing: Set<string>;
+  /** Per reviewer, how to stop its reviews: the one going on and the ones waiting behind it. */
+  reviewStops: Map<string, Set<AbortController>>;
+  /** Per reviewer, the end of its line of reviews. A reviewer does one at a time. */
+  reviewQueue: Map<string, Promise<void>>;
 }
 
 export interface RunnerOptions {
@@ -138,6 +165,21 @@ export interface RunnerOptions {
   scribeDelayMs?: number;
   /** The shortest time between two pushes of one agent's live diff. */
   liveChangesIntervalMs?: number;
+}
+
+/**
+ * Who reviews a change: a reviewer on another provider than its author when there is one, so a
+ * different model looks at it; failing that one on another model; failing that any reviewer.
+ */
+export function pickReviewer(team: Agent[], author: Agent): Agent | undefined {
+  const reviewers = team.filter(
+    (agent) => agent.role === 'reviewer' && agent.firedAt === null && agent.id !== author.id,
+  );
+  return (
+    reviewers.find((agent) => agent.provider !== author.provider) ??
+    reviewers.find((agent) => agent.model !== author.model) ??
+    reviewers[0]
+  );
 }
 
 /** "Ada", "Ada and Bo", "Ada, Bo and Cy". */
@@ -166,6 +208,8 @@ export const DEFAULT_LIVE_CHANGES_INTERVAL_MS = 1000;
  * - While the group asks for plan approval, the lead's first hand-off in a thread is held until
  *   the human approves it. After that the lead hands work on freely in that thread.
  * - Work stops only when the human asks: Stop all, Stop on one agent, `/stop` or `/now`.
+ * - A worker's new change is reviewed before its report is handed on, while the group asks for
+ *   that and has a reviewer: the engine gives the reviewer one turn on it, outside the inboxes.
  * - When the whole group has been idle for a while, the scribe updates project.md.
  */
 export class TeamRunner {
@@ -200,7 +244,10 @@ export class TeamRunner {
       running: this.isRunning(groupId),
       agents: listAgents(this.ctx.db, groupId).map((agent) => {
         const inbox = work?.inboxes.get(agent.id);
-        const working = agent.role === 'scribe' ? scribeWorking : inbox?.turn !== undefined;
+        const working =
+          agent.role === 'scribe'
+            ? scribeWorking
+            : inbox?.turn !== undefined || work?.reviewing.has(agent.id) === true;
         return {
           agentId: agent.id,
           activity: working ? 'working' : 'idle',
@@ -284,6 +331,12 @@ export class TeamRunner {
       work.scribeAgain = false;
       scribe.controller.abort();
       winding.push(scribe.done);
+    }
+    // Reviews run inside the turn of the worker they are about, which winds them down.
+    const reviews = work.reviewStops.get(agent.id);
+    if (reviews && reviews.size > 0) {
+      stopped = true;
+      for (const review of reviews) review.abort();
     }
     const inbox = work.inboxes.get(agent.id);
     if (inbox) {
@@ -375,6 +428,9 @@ export class TeamRunner {
         scribeAgain: false,
         stopping: false,
         announcedRunning: false,
+        reviewing: new Set(),
+        reviewStops: new Map(),
+        reviewQueue: new Map(),
       };
       this.groups.set(groupId, work);
     }
@@ -547,15 +603,113 @@ export class TeamRunner {
     );
     const triggers = items.map((item) => item.trigger).sort((a, b) => a.id - b.id);
 
-    const reply = await this.runTurn(
+    const done = await this.runTurn(
       group,
       agent,
       { triggers, threadId, round, interrupted },
       signal,
     );
     // A stopped agent hands nothing on, even if its reply got out just before the stop.
-    if (!reply || signal.aborted) return;
-    this.routeReply(groupId, agent, reply, items, threadId, round);
+    if (!done || signal.aborted) return;
+    // A new change is reviewed first, so whoever gets the report also gets the verdict.
+    if (done.change)
+      await this.reviewChange(groupId, agent, done, triggers, threadId, round, signal);
+    if (signal.aborted) return;
+    this.routeReply(groupId, agent, done.reply, items, threadId, round);
+  }
+
+  /**
+   * Gives a reviewer one turn on a worker's new change, and writes the verdict on the diff.
+   * The engine decides that this happens and who reviews; the reviewer decides the verdict.
+   * The review is not handed on to anyone: the lead, or the human, acts on it.
+   */
+  private async reviewChange(
+    groupId: string,
+    worker: Agent,
+    done: TurnResult,
+    asked: Message[],
+    threadId: number,
+    round: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const { db } = this.ctx;
+    // Read now: the human may have changed the setting or decided the diff since.
+    const group = getGroup(db, groupId);
+    const card = done.change && getMessage(db, done.change.id);
+    if (!group?.autoReview || card?.meta?.type !== 'diff' || card.meta.status !== 'pending') return;
+    // A change that fails the project's check goes back to its author first.
+    if (card.meta.check && card.meta.check.status !== 'passed') return;
+    const reviewer = pickReviewer(listAgents(db, groupId), worker);
+    if (!reviewer) return;
+
+    const work = this.workOf(groupId);
+    // Stopping the worker stops its review. So does stopping the reviewer.
+    const own = new AbortController();
+    const stop = AbortSignal.any([signal, own.signal]);
+    const stops = work.reviewStops.get(reviewer.id) ?? new Set<AbortController>();
+    work.reviewStops.set(reviewer.id, stops);
+    stops.add(own);
+    this.stampReview(card.id, { reviewerId: reviewer.id, status: 'running' });
+
+    const review = async (): Promise<TurnResult | undefined> => {
+      if (stop.aborted) throw new CancelledError();
+      work.reviewing.add(reviewer.id);
+      try {
+        return await this.runTurn(
+          group,
+          reviewer,
+          {
+            triggers: [...asked, done.reply, card],
+            threadId,
+            round,
+            interrupted: false,
+            review: { worker, card, cwd: done.workspace.cwd },
+          },
+          stop,
+        );
+      } finally {
+        work.reviewing.delete(reviewer.id);
+      }
+    };
+    // A reviewer does one review at a time, in the order the changes came in.
+    const turn = (work.reviewQueue.get(reviewer.id) ?? Promise.resolve()).then(review);
+    work.reviewQueue.set(
+      reviewer.id,
+      turn.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+
+    let result: ReviewResult = { reviewerId: reviewer.id, status: 'failed' };
+    try {
+      const reviewed = await turn;
+      if (reviewed) {
+        result = {
+          reviewerId: reviewer.id,
+          status: reviewed.verdict ?? 'unclear',
+          messageId: reviewed.reply.id,
+        };
+      }
+    } catch (error) {
+      if (error instanceof CancelledError) result.status = 'stopped';
+      else postNotice(this.ctx, groupId, `The review failed: ${String(error)}`, 'error');
+    } finally {
+      stops.delete(own);
+    }
+    this.stampReview(card.id, result);
+    logEvent(db, {
+      groupId,
+      agentId: reviewer.id,
+      kind: 'review.done',
+      detail: { diffMessageId: card.id, authorId: worker.id, ...result },
+    });
+  }
+
+  /** Writes a review's state on its diff, as the diff stands now. */
+  private stampReview(cardId: number, review: ReviewResult): void {
+    const card = getMessage(this.ctx.db, cardId);
+    if (card?.meta?.type === 'diff') setMessageMeta(this.ctx, card, { ...card.meta, review });
   }
 
   /**
@@ -763,28 +917,43 @@ export class TeamRunner {
     })();
   }
 
-  /** One agent turn. Returns the agent's message, or undefined if the turn failed. */
+  /**
+   * One agent turn. Returns what it left behind, or undefined if the turn failed. With
+   * `turn.review` it is a review the engine asked for: the agent reads the worker's folder,
+   * changes nothing, runs nothing, and its reply carries a verdict.
+   */
   private async runTurn(
     group: Group,
     agent: Agent,
-    turn: { triggers: Message[]; threadId: number; round: number; interrupted: boolean },
+    turn: {
+      triggers: Message[];
+      threadId: number;
+      round: number;
+      interrupted: boolean;
+      review?: ReviewJob;
+    },
     signal: AbortSignal,
-  ): Promise<Message | undefined> {
+  ): Promise<TurnResult | undefined> {
     const { triggers, threadId, round } = turn;
     const { ctx } = this;
     ctx.hub.broadcast(group.id, { type: 'agent.activity', agentId: agent.id, activity: 'working' });
     const started = Date.now();
     let liveChanges: PacedTask | undefined;
     try {
-      const workspace = await this.hooks.prepareWorkspace(group, agent);
+      const workspace: Workspace = turn.review
+        ? { cwd: turn.review.cwd }
+        : await this.hooks.prepareWorkspace(group, agent);
       liveChanges = this.watchChanges(group, agent, workspace);
       const watching = liveChanges;
       const outsideEdits = new Set<string>();
       // A terminal needs a provider that asks before it runs a command, and an engine to ask.
       const canAsk = PROVIDERS.find((info) => info.id === agent.provider)?.canRunCommands;
-      const decideCommand = canAsk ? this.hooks.decideCommand?.bind(this.hooks) : undefined;
-      // The engine, not the model, decides what the agent may touch.
-      const { files: access, effort, commands } = agent.settings;
+      const decideCommand =
+        canAsk && !turn.review ? this.hooks.decideCommand?.bind(this.hooks) : undefined;
+      // The engine, not the model, decides what the agent may touch. A review only reads.
+      const { files, effort } = agent.settings;
+      const access = turn.review && files !== 'none' ? 'read' : files;
+      const commands = turn.review ? 'off' : agent.settings.commands;
       const promptInput = {
         group,
         agent,
@@ -800,6 +969,7 @@ export class TeamRunner {
         history: listMessages(ctx.db, group.id, { limit: Math.max(LEAD_HISTORY, 200) }),
         triggers,
         interrupted: turn.interrupted,
+        review: turn.review && { worker: turn.review.worker, card: turn.review.card },
       };
 
       const result = await ctx.createAdapter(agent).run({
@@ -856,6 +1026,9 @@ export class TeamRunner {
           costUsd: result.costUsd,
           changedFiles: result.changedFiles,
           memoryNotes: parsed.memoryNotes.length,
+          ...(turn.review
+            ? { reviewOf: turn.review.card.id, verdict: parsed.verdict ?? 'unclear' }
+            : {}),
         },
       });
 
@@ -865,17 +1038,21 @@ export class TeamRunner {
         this.postHireProposals(group, agent, parsed.hireProposals, parsed.roleDrafts);
       }
 
-      try {
-        await this.hooks.afterTurn(group, agent, workspace, reply, signal);
-      } catch (error) {
-        postNotice(
-          ctx,
-          group.id,
-          `Could not record ${agent.name}'s work: ${String(error)}`,
-          'error',
-        );
+      let change: Message | undefined;
+      // A review changes no files, so there is nothing to record.
+      if (!turn.review) {
+        try {
+          change = await this.hooks.afterTurn(group, agent, workspace, reply, signal);
+        } catch (error) {
+          postNotice(
+            ctx,
+            group.id,
+            `Could not record ${agent.name}'s work: ${String(error)}`,
+            'error',
+          );
+        }
       }
-      return reply;
+      return { reply, workspace, change, verdict: parsed.verdict };
     } catch (error) {
       if (error instanceof CancelledError || signal.aborted) throw new CancelledError();
       const details = error instanceof AdapterError && error.details ? `\n\n${error.details}` : '';
@@ -892,7 +1069,16 @@ export class TeamRunner {
       // One last look, after the commit: the live view empties, or shows what a turn that was
       // stopped or failed left behind.
       await liveChanges?.finish();
-      ctx.hub.broadcast(group.id, { type: 'agent.activity', agentId: agent.id, activity: 'idle' });
+      // An agent can be on a review and on a turn of its own at once. It is idle when both end.
+      const work = this.groups.get(group.id);
+      const stillWorking = turn.review
+        ? work?.inboxes.get(agent.id)?.turn !== undefined
+        : work?.reviewing.has(agent.id) === true;
+      ctx.hub.broadcast(group.id, {
+        type: 'agent.activity',
+        agentId: agent.id,
+        activity: stillWorking ? 'working' : 'idle',
+      });
     }
   }
 

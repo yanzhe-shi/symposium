@@ -24,6 +24,11 @@ export interface Group {
    * `npm test`. Its result goes on the diff. Empty: no check.
    */
   checkCommand: string;
+  /**
+   * Whether the engine has a reviewer look at every worker's change before anyone acts on it.
+   * Needs a reviewer on the team.
+   */
+  autoReview: boolean;
   createdAt: number;
 }
 
@@ -168,6 +173,19 @@ export interface CheckResult {
   durationMs: number;
 }
 
+/**
+ * How a reviewer judged a worker's change. `changes`: something must be fixed first.
+ * `unclear`: the reviewer answered without a verdict. `failed`: its turn did not finish.
+ */
+export type ReviewStatus = 'running' | 'approved' | 'changes' | 'unclear' | 'failed' | 'stopped';
+
+export interface ReviewResult {
+  reviewerId: string;
+  status: ReviewStatus;
+  /** The reviewer's message with the review, once there is one. */
+  messageId?: number;
+}
+
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 export type PlanStatus = 'pending' | 'approved' | 'declined';
 
@@ -208,6 +226,8 @@ export type MessageMeta =
       truncated: boolean;
       /** How the group's check command went on this change. Absent: no check was set. */
       check?: CheckResult;
+      /** The engine-run review of this change. Absent: none was asked for. */
+      review?: ReviewResult;
     }
   | {
       /** An agent wants to run a terminal command and waits for the human. */
@@ -407,6 +427,7 @@ export interface UpdateGroupRequest {
   maxParallel?: number;
   leadAsksFirst?: boolean;
   checkCommand?: string;
+  autoReview?: boolean;
 }
 
 export interface ErrorResponse {

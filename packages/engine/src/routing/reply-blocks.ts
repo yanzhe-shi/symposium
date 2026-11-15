@@ -7,18 +7,21 @@ export interface ParsedReply {
   hireProposals: unknown[];
   /** The text of ```role blocks: roles the agent wrote. Checked by the caller. */
   roleDrafts: string[];
+  /** A reviewer's judgement of a change, from a ```verdict block. The last one counts. */
+  verdict?: 'approved' | 'changes';
   /** Blocks that could not be read, with the reason. */
   problems: string[];
 }
 
-const BLOCK_PATTERN = /```(memory|hire|role)[^\S\n]*\n([\s\S]*?)```[^\S\n]*(?:\n|$)/g;
+const BLOCK_PATTERN = /```(memory|hire|role|verdict)[^\S\n]*\n([\s\S]*?)```[^\S\n]*(?:\n|$)/g;
 
-/** Pulls ```memory, ```hire and ```role blocks out of an agent's reply. */
+/** Pulls ```memory, ```hire, ```role and ```verdict blocks out of an agent's reply. */
 export function parseReplyBlocks(reply: string): ParsedReply {
   const memoryNotes: string[] = [];
   const hireProposals: unknown[] = [];
   const roleDrafts: string[] = [];
   const problems: string[] = [];
+  let verdict: ParsedReply['verdict'];
 
   const text = reply.replace(BLOCK_PATTERN, (_match, kind: string, body: string) => {
     const content = body.trim();
@@ -26,6 +29,9 @@ export function parseReplyBlocks(reply: string): ParsedReply {
       if (content) memoryNotes.push(content);
     } else if (kind === 'role') {
       if (content) roleDrafts.push(content);
+    } else if (kind === 'verdict') {
+      if (/^approve/i.test(content)) verdict = 'approved';
+      else if (/^(changes|request)/i.test(content)) verdict = 'changes';
     } else {
       try {
         hireProposals.push(JSON.parse(content));
@@ -45,6 +51,7 @@ export function parseReplyBlocks(reply: string): ParsedReply {
     memoryNotes,
     hireProposals,
     roleDrafts,
+    ...(verdict ? { verdict } : {}),
     problems,
   };
 }

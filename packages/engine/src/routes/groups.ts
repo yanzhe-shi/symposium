@@ -83,6 +83,7 @@ export function registerGroupRoutes(
             maxParallel: { type: 'integer', minimum: 1, maximum: MAX_PARALLEL_LIMIT },
             leadAsksFirst: { type: 'boolean' },
             checkCommand: { type: 'string', maxLength: MAX_CHECK_COMMAND_LENGTH },
+            autoReview: { type: 'boolean' },
           },
           additionalProperties: false,
         },
@@ -96,6 +97,7 @@ export function registerGroupRoutes(
         maxParallel: request.body.maxParallel,
         leadAsksFirst: request.body.leadAsksFirst,
         checkCommand: request.body.checkCommand?.trim(),
+        autoReview: request.body.autoReview,
       })!;
       ctx.hub.broadcast(group.id, { type: 'group.changed', group });
       // A higher cap may let waiting agents start.

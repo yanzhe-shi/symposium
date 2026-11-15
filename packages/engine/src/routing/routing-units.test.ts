@@ -98,6 +98,7 @@ describe('prompt context', () => {
     maxParallel: 3,
     leadAsksFirst: true,
     checkCommand: '',
+    autoReview: true,
     createdAt: 0,
   };
   let nextId = 1;

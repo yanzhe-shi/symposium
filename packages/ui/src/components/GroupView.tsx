@@ -174,6 +174,23 @@ function GroupSettings({
               }}
             />
           </label>
+          <label className="setting-row">
+            <span>
+              Review every change
+              <small>
+                On: a reviewer on your team judges each worker's change before the lead or you act
+                on it, and the verdict shows on the diff. Needs a reviewer. A change that fails the
+                check is not reviewed.
+              </small>
+            </span>
+            <input
+              type="checkbox"
+              className="switch"
+              role="switch"
+              checked={group.autoReview}
+              onChange={(event) => onChange({ autoReview: event.target.checked })}
+            />
+          </label>
           <div className="setting-row setting-row-danger">
             <span>
               Delete this group

@@ -1336,6 +1336,7 @@ input.switch:checked::after {
 .pill-merged,
 .pill-approved,
 .pill-check-passed,
+.pill-review-approved,
 .pill-allowed {
   color: var(--ok);
   background: var(--ok-bg);
@@ -1350,12 +1351,15 @@ input.switch:checked::after {
   opacity: 0.65;
 }
 
-.pill-check-running {
+.pill-check-running,
+.pill-review-running {
   color: var(--warning);
   background: var(--warning-bg);
 }
 
 .pill-check-failed,
+.pill-review-changes,
+.pill-review-failed,
 .pill-check-timed-out,
 .pill-check-error {
   color: var(--error);

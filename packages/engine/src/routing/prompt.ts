@@ -1,6 +1,6 @@
 import type { AgentAccess } from '@symposium/adapters';
 import { describeCheck } from '../checks.js';
-import type { Agent, AgentSettings, Group, Message, RoleInfo } from '../protocol.js';
+import type { Agent, AgentSettings, Group, Message, ReviewResult, RoleInfo } from '../protocol.js';
 import { applyPlanApproval, roleAccess } from '../roles.js';
 
 /** Upper bound on the conversation part of a prompt, in characters. Oldest messages go first. */
@@ -35,6 +35,11 @@ export interface PromptInput {
   triggers: Message[];
   /** True when the agent's previous turn was cut short to handle these messages (`/now`). */
   interrupted?: boolean;
+  /**
+   * Set when the engine itself asks a reviewer to judge a worker's change. The triggers then
+   * are what the worker was asked, its report and the diff.
+   */
+  review?: { worker: Agent; card: Message };
 }
 
 /** An agent's role in words: "lead" for a built-in role, "Designer" for a custom one. */
@@ -142,6 +147,14 @@ The CEO approves a plan before work starts, and Symposium enforces it. When you 
 - If the CEO declines, nothing was started. Wait for what they want changed, then send a new plan with its assignments.
 - Each plan card in the conversation shows its status: pending, approved or declined.`;
 
+const AUTO_REVIEW = `## Reviews
+
+Symposium has a reviewer check every change by itself, once it passes the project's check if there is one. The review is in the chat and its verdict is on the diff, before a teammate's report reaches you.
+
+- Don't ask for a review of a change yourself.
+- If changes are needed, send the author back with what to fix.
+- If it is approved, tell the CEO it is ready to merge.`;
+
 export function buildSystemPrompt(input: PromptInput): string {
   const { group, agent, team, roleText, roles, access, branch, terminal } = input;
   const roster = team
@@ -187,6 +200,9 @@ export function buildSystemPrompt(input: PromptInput): string {
   );
   if (agent.role === 'lead') {
     sections.push(group.leadAsksFirst ? PLAN_APPROVAL : START_NOW);
+    if (group.autoReview && team.some((member) => member.role === 'reviewer')) {
+      sections.push(AUTO_REVIEW);
+    }
     sections.push(hireHelp(roles ?? []));
   }
   return sections.join('\n\n');
@@ -199,13 +215,37 @@ export function authorLabel(message: Message, everyone: Agent[]): string {
   return author ? `${author.name} (${author.role})` : 'Former agent';
 }
 
+/** A review's outcome in a few words, for a prompt. */
+export function describeReview(review: ReviewResult): string {
+  const where = review.messageId === undefined ? '' : ` (message #${review.messageId})`;
+  switch (review.status) {
+    case 'running':
+      return 'in progress';
+    case 'approved':
+      return `approved${where}`;
+    case 'changes':
+      return `changes needed${where}`;
+    case 'unclear':
+      return `no clear verdict${where}`;
+    case 'failed':
+      return 'could not be done';
+    case 'stopped':
+      return 'was stopped';
+  }
+}
+
 /** One message as it appears in a prompt. Pending diffs are shown in full unless `fullDiffs` is off. */
 export function formatMessage(message: Message, everyone: Agent[], fullDiffs = true): string {
   let body = message.body;
   if (message.meta?.type === 'diff') {
     const { stat, diff, truncated, status } = message.meta;
     body = `${message.body}\nStatus: ${status}\n${stat}`;
-    const { check } = message.meta;
+    const { check, review } = message.meta;
+    if (review) {
+      const reviewer =
+        everyone.find((agent) => agent.id === review.reviewerId)?.name ?? 'a reviewer';
+      body += `\nReview by ${reviewer}: ${describeReview(review)}`;
+    }
     if (check && status === 'pending') {
       body += `\nCheck \`${check.command}\`: ${describeCheck(check)}`;
       if (check.status !== 'passed' && check.status !== 'running' && check.output.trim()) {
@@ -270,7 +310,26 @@ export function buildPrompt(input: PromptInput): string {
 }
 
 function turnInstructions(input: PromptInput): string {
-  const { agent, everyone, triggers, interrupted } = input;
+  const { agent, everyone, triggers, interrupted, review } = input;
+  if (review) {
+    const { worker, card } = review;
+    return [
+      `Symposium asks you to review ${worker.name}'s change in message #${card.id}, before the CEO decides about it. The messages before it say what was asked and what ${worker.name} reports.`,
+      ...(input.access === 'none'
+        ? []
+        : [
+            `The folder you are in is ${worker.name}'s worktree, so the files you read are the changed ones.`,
+          ]),
+      '',
+      '- Judge whether the change does what was asked and is safe to merge. Name only real problems, each with the file and what to do about it. Leave out matters of taste.',
+      '- Mention nobody. Symposium puts your verdict on the diff, and the lead or the CEO decides what happens next.',
+      `- Reply now, as ${agent.name}, and end with your verdict in a block, \`approve\` or \`changes\`:`,
+      '',
+      '```verdict',
+      'approve',
+      '```',
+    ].join('\n');
+  }
   const lines: string[] = [];
   if (interrupted) {
     lines.push(

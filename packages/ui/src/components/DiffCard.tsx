@@ -5,6 +5,7 @@ import type {
   DiffStatus,
   Message,
   MessageMeta,
+  ReviewResult,
 } from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { api } from '../api.ts';
@@ -60,6 +61,27 @@ function CheckLine({ check }: { check: CheckResult }) {
   );
 }
 
+/** What a reviewer made of this change. The review itself is the reviewer's message in the chat. */
+function ReviewLine({ review, agents }: { review: ReviewResult; agents: Agent[] }) {
+  const name = agents.find((agent) => agent.id === review.reviewerId)?.name ?? 'A reviewer';
+  const label = {
+    running: `${name} is reviewing…`,
+    approved: `${name} approved`,
+    changes: `${name} asks for changes`,
+    unclear: `${name} gave no verdict`,
+    failed: `${name}'s review failed`,
+    stopped: 'Review stopped',
+  }[review.status];
+  return (
+    <div className="check-line">
+      <span className={`pill pill-review-${review.status}`}>{label}</span>
+      {review.messageId !== undefined && (
+        <span className="muted small">The review is {name}'s message below.</span>
+      )}
+    </div>
+  );
+}
+
 interface DiffCardProps {
   groupId: string;
   message: Message;
@@ -94,8 +116,10 @@ export function DiffCard({ groupId, message, meta, agents }: DiffCardProps) {
   }
 
   const stat = parseDiffStat(meta.stat);
-  const checkFailed =
-    meta.check !== undefined && !['passed', 'running'].includes(meta.check.status);
+  // The check failed or the reviewer wants changes: merging is still the human's call.
+  const doubtful =
+    (meta.check !== undefined && !['passed', 'running'].includes(meta.check.status)) ||
+    meta.review?.status === 'changes';
 
   return (
     <article className={`card diff-card diff-${meta.status}`}>
@@ -139,11 +163,12 @@ export function DiffCard({ groupId, message, meta, agents }: DiffCardProps) {
       </div>
       {open && <DiffView diff={meta.diff} truncated={meta.truncated} />}
       {meta.check && <CheckLine check={meta.check} />}
+      {meta.review && <ReviewLine review={meta.review} agents={agents} />}
       {error && <p className="form-error">{error}</p>}
       {meta.status === 'pending' && (
         <div className="card-actions">
           <button type="button" disabled={busy} onClick={() => void decide('merge')}>
-            {checkFailed ? 'Merge anyway' : `Merge into ${meta.baseBranch}`}
+            {doubtful ? 'Merge anyway' : `Merge into ${meta.baseBranch}`}
           </button>
           <button
             type="button"

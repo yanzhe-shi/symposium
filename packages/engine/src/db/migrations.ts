@@ -92,6 +92,11 @@ export const migrations: readonly string[] = [
   `
   ALTER TABLE groups ADD COLUMN check_command TEXT NOT NULL DEFAULT '';
   `,
+
+  // 8: reviews (milestone 20). Whether a reviewer looks at every worker's change by itself.
+  `
+  ALTER TABLE groups ADD COLUMN auto_review INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 export function getSchemaVersion(db: Database.Database): number {
