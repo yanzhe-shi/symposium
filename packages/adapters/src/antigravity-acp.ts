@@ -338,9 +338,11 @@ export async function runAntigravityAcp(command: string, original: AgentTask): P
   try {
     const result = await runProcess({
       command,
-      // The sandbox restricts what terminal commands can reach.
-      args: ['acp', '--sandbox'],
+      // `--sandbox` is agy's own limit on what commands can reach. It also stops them from
+      // writing in the agent's folder, so Symposium's sandbox takes its place when there is one.
+      args: task.sandbox ? ['acp'] : ['acp', '--sandbox'],
       cwd: task.workingDirectory,
+      sandbox: task.sandbox,
       signal: AbortSignal.any(signals),
       clock,
       onStart: (stdin) => {

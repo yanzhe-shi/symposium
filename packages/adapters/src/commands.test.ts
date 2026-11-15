@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AntigravityAdapter } from './antigravity.js';
 import { ClaudeCodeAdapter, claudeCodeArgs, offersCommands } from './claude-code.js';
 import { MockAdapter } from './mock.js';
+import { sandboxAvailable } from './sandbox.js';
 import type { AgentEvent, AgentTask, CommandDecision, CommandRequest } from './types.js';
+
+// Some systems and most containers do not allow bubblewrap.
+const canSandbox = await sandboxAvailable();
 
 let dir: string;
 beforeEach(() => {
@@ -358,6 +362,18 @@ function onMessage(message) {
       outcome: { outcome: 'selected', optionId: 'deny' },
     });
   });
+
+  it.skipIf(!canSandbox)(
+    "leaves out agy's own sandbox when Symposium's sandbox confines the process",
+    async () => {
+      const t = task(() => ({ allow: true }), {
+        sandbox: { writable: [dir], readOnly: [], hidden: [] },
+      });
+      const reply = await new AntigravityAdapter(fakeNodeCli('agy', FAKE_AGY)).run(t);
+      expect(reply.text).toBe('All done: allow, -32601');
+      expect(JSON.parse(readFileSync(join(dir, 'args.json'), 'utf8'))).toEqual(['acp']);
+    },
+  );
 
   it('refuses a command the engine refuses', async () => {
     const t = task(() => ({ allow: false, reason: 'not on the list' }));

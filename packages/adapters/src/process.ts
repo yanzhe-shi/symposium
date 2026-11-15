@@ -3,6 +3,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { delimiter, isAbsolute, join } from 'node:path';
+import { bwrapArgs, type Sandbox } from './sandbox.js';
 import { AdapterError, CancelledError, type AgentTask } from './types.js';
 
 export interface ProcessOptions {
@@ -23,6 +24,8 @@ export interface ProcessOptions {
    * then stays open after `input` until the caller ends it.
    */
   onStart?: (stdin: ProcessStdin) => void;
+  /** Confines the process to this. See `Sandbox`. Without it the process runs as the user does. */
+  sandbox?: Sandbox;
 }
 
 /** The stdin of a running process. Writes after the process has gone are dropped. */
@@ -98,13 +101,18 @@ const MAX_OUTPUT_BYTES = 20 * 1024 * 1024;
 const KILL_GRACE_MS = 3000;
 
 /** Runs a command without a shell and collects its output. Rejects on abort, timeout or spawn failure. */
-export function runProcess(options: ProcessOptions): Promise<ProcessResult> {
+export async function runProcess(options: ProcessOptions): Promise<ProcessResult> {
   const { command, args, cwd, input, env, signal, timeoutMs, onStdoutLine, onStart } = options;
   const clock = options.clock ?? (timeoutMs === undefined ? undefined : new TurnClock(timeoutMs));
-  if (signal?.aborted) return Promise.reject(new CancelledError());
+  if (signal?.aborted) throw new CancelledError();
+  // In a sandbox, bubblewrap is what starts: it sets the sandbox up and then runs the command.
+  const [program, programArgs] = options.sandbox
+    ? ['bwrap', [...(await bwrapArgs(options.sandbox, cwd)), command, ...args]]
+    : [command, args];
+  if (signal?.aborted) throw new CancelledError();
 
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(program, programArgs, {
       cwd,
       env: env ?? process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -173,7 +181,7 @@ export function runProcess(options: ProcessOptions): Promise<ProcessResult> {
     child.on('error', (error: NodeJS.ErrnoException) => {
       const message =
         error.code === 'ENOENT'
-          ? `Command not found: ${command}. Is it installed and on your PATH?`
+          ? `Command not found: ${program}. Is it installed and on your PATH?`
           : `Could not start ${command}: ${error.message}`;
       finish(new AdapterError(message));
     });

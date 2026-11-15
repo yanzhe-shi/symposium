@@ -7,3 +7,4 @@ export { reportingFileChanges } from './file-changes.js';
 export { createAdapter, isProviderId, PROVIDERS } from './registry.js';
 export { listModels, parseAgyModels } from './models.js';
 export { commandExists } from './process.js';
+export { PROVIDER_STATE, bwrapArgs, sandboxAvailable, type Sandbox } from './sandbox.js';

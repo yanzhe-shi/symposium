@@ -169,6 +169,7 @@ export class AntigravityAdapter implements AgentAdapter {
       cwd: task.workingDirectory,
       signal: task.signal,
       timeoutMs: task.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      sandbox: task.sandbox,
     };
     const reader = task.onEvent && antigravityEventReader(task.workingDirectory, task.onEvent);
     let result: ProcessResult = await runProcess({ ...options, onStdoutLine: reader });

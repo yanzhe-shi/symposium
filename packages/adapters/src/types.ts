@@ -1,3 +1,5 @@
+import type { Sandbox } from './sandbox.js';
+
 /**
  * What an agent may touch while it works:
  * - `edit`: read and edit files inside `workingDirectory` (a worker's own git worktree)
@@ -97,6 +99,11 @@ export interface AgentTask {
   onEvent?: (event: AgentEvent) => void;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /**
+   * What the provider's process may touch, for providers that run a program on this computer.
+   * The engine decides it. Without it the process runs as the user does.
+   */
+  sandbox?: Sandbox;
 }
 
 export interface AgentReply {

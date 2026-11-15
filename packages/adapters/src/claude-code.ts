@@ -383,6 +383,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       cwd: task.workingDirectory,
       signal: task.signal,
       clock,
+      sandbox: task.sandbox,
     };
     let result;
     if (offersCommands(task)) {
