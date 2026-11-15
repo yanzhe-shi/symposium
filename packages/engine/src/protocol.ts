@@ -19,6 +19,11 @@ export interface Group {
    * it: the lead's hand-offs are held until the human approves, once per thread.
    */
   leadAsksFirst: boolean;
+  /**
+   * A command the engine runs in a worker's worktree after each of its changes, such as
+   * `npm test`. Its result goes on the diff. Empty: no check.
+   */
+  checkCommand: string;
   createdAt: number;
 }
 
@@ -147,6 +152,22 @@ export type DiffStatus = 'pending' | 'merged' | 'discarded' | 'superseded';
  * `cancelled`: the agent was stopped, or the engine restarted, while it waited.
  */
 export type CommandStatus = 'pending' | 'allowed' | 'denied' | 'expired' | 'cancelled';
+/**
+ * How the group's check command went on a worker's change. `timed-out`: it ran too long.
+ * `stopped`: the human stopped the agent while it ran. `error`: it could not be started.
+ */
+export type CheckStatus = 'running' | 'passed' | 'failed' | 'timed-out' | 'stopped' | 'error';
+
+export interface CheckResult {
+  command: string;
+  status: CheckStatus;
+  /** Null unless the command ran to its end. */
+  exitCode: number | null;
+  /** The end of what the command printed. */
+  output: string;
+  durationMs: number;
+}
+
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 export type PlanStatus = 'pending' | 'approved' | 'declined';
 
@@ -185,6 +206,8 @@ export type MessageMeta =
       stat: string;
       diff: string;
       truncated: boolean;
+      /** How the group's check command went on this change. Absent: no check was set. */
+      check?: CheckResult;
     }
   | {
       /** An agent wants to run a terminal command and waits for the human. */
@@ -383,6 +406,7 @@ export interface UpdateGroupRequest {
   maxRounds?: number;
   maxParallel?: number;
   leadAsksFirst?: boolean;
+  checkCommand?: string;
 }
 
 export interface ErrorResponse {

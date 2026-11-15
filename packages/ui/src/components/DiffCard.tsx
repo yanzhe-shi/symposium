@@ -1,4 +1,11 @@
-import type { Agent, DiffStatus, Message, MessageMeta } from '@symposium/engine/protocol';
+import type {
+  Agent,
+  CheckResult,
+  CheckStatus,
+  DiffStatus,
+  Message,
+  MessageMeta,
+} from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { api } from '../api.ts';
 import { parseDiffStat } from '../markdown.ts';
@@ -14,6 +21,44 @@ const STATUS_LABELS: Record<DiffStatus, string> = {
   discarded: 'Discarded',
   superseded: 'Replaced by a newer diff',
 };
+
+const CHECK_LABELS: Record<CheckStatus, string> = {
+  running: 'Check running…',
+  passed: 'Check passed',
+  failed: 'Check failed',
+  'timed-out': 'Check took too long',
+  stopped: 'Check stopped',
+  error: 'Check could not start',
+};
+
+/** "12 s", "2 min 5 s". */
+function duration(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+}
+
+/** How the group's check command went on this change, with its output on request. */
+function CheckLine({ check }: { check: CheckResult }) {
+  const summary = (
+    <>
+      <span className={`pill pill-check-${check.status}`}>{CHECK_LABELS[check.status]}</span>
+      <code className="check-command">{check.command}</code>
+      {check.status !== 'running' && (
+        <span className="muted small">
+          {check.exitCode !== null && check.exitCode !== 0 ? `exit code ${check.exitCode} · ` : ''}
+          {duration(check.durationMs)}
+        </span>
+      )}
+    </>
+  );
+  if (!check.output.trim()) return <div className="check-line">{summary}</div>;
+  return (
+    <details className="check-details" open={check.status === 'failed'}>
+      <summary className="check-line">{summary}</summary>
+      <pre className="check-output">{check.output}</pre>
+    </details>
+  );
+}
 
 interface DiffCardProps {
   groupId: string;
@@ -49,6 +94,8 @@ export function DiffCard({ groupId, message, meta, agents }: DiffCardProps) {
   }
 
   const stat = parseDiffStat(meta.stat);
+  const checkFailed =
+    meta.check !== undefined && !['passed', 'running'].includes(meta.check.status);
 
   return (
     <article className={`card diff-card diff-${meta.status}`}>
@@ -91,11 +138,12 @@ export function DiffCard({ groupId, message, meta, agents }: DiffCardProps) {
         </button>
       </div>
       {open && <DiffView diff={meta.diff} truncated={meta.truncated} />}
+      {meta.check && <CheckLine check={meta.check} />}
       {error && <p className="form-error">{error}</p>}
       {meta.status === 'pending' && (
         <div className="card-actions">
           <button type="button" disabled={busy} onClick={() => void decide('merge')}>
-            Merge into {meta.baseBranch}
+            {checkFailed ? 'Merge anyway' : `Merge into ${meta.baseBranch}`}
           </button>
           <button
             type="button"

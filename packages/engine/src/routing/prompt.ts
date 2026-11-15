@@ -1,4 +1,5 @@
 import type { AgentAccess } from '@symposium/adapters';
+import { describeCheck } from '../checks.js';
 import type { Agent, AgentSettings, Group, Message, RoleInfo } from '../protocol.js';
 import { applyPlanApproval, roleAccess } from '../roles.js';
 
@@ -9,6 +10,7 @@ export const LEAD_HISTORY = 60;
 /** How many relevant messages other agents see. */
 export const MEMBER_HISTORY = 25;
 const MAX_DIFF_IN_PROMPT = 30_000;
+const MAX_CHECK_OUTPUT_IN_PROMPT = 4000;
 
 export interface PromptInput {
   group: Group;
@@ -203,6 +205,13 @@ export function formatMessage(message: Message, everyone: Agent[], fullDiffs = t
   if (message.meta?.type === 'diff') {
     const { stat, diff, truncated, status } = message.meta;
     body = `${message.body}\nStatus: ${status}\n${stat}`;
+    const { check } = message.meta;
+    if (check && status === 'pending') {
+      body += `\nCheck \`${check.command}\`: ${describeCheck(check)}`;
+      if (check.status !== 'passed' && check.status !== 'running' && check.output.trim()) {
+        body += `\n\`\`\`\n${check.output.slice(-MAX_CHECK_OUTPUT_IN_PROMPT).trim()}\n\`\`\``;
+      }
+    }
     // Pending diffs are shown in full so the lead and reviewers can judge them.
     if (fullDiffs && status === 'pending') {
       const shown = diff.length > MAX_DIFF_IN_PROMPT ? diff.slice(0, MAX_DIFF_IN_PROMPT) : diff;

@@ -97,6 +97,7 @@ describe('prompt context', () => {
     maxRounds: 6,
     maxParallel: 3,
     leadAsksFirst: true,
+    checkCommand: '',
     createdAt: 0,
   };
   let nextId = 1;

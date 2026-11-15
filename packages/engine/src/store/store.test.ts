@@ -19,6 +19,7 @@ describe('groups store', () => {
       maxRounds: DEFAULT_MAX_ROUNDS,
       maxParallel: 3,
       leadAsksFirst: true,
+      checkCommand: '',
       createdAt: 1000,
     });
     expect(getGroup(db, 'missing')).toBeUndefined();

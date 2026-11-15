@@ -45,6 +45,14 @@ function GroupSettings({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(group.name);
 
+  const [check, setCheck] = useState(group.checkCommand);
+
+  function saveCheck(): void {
+    const wanted = check.trim();
+    setCheck(wanted);
+    if (wanted !== group.checkCommand) onChange({ checkCommand: wanted });
+  }
+
   function rename(): void {
     const wanted = name.trim();
     if (wanted && wanted !== group.name) onChange({ name: wanted });
@@ -143,6 +151,27 @@ function GroupSettings({
               role="switch"
               checked={group.leadAsksFirst}
               onChange={(event) => onChange({ leadAsksFirst: event.target.checked })}
+            />
+          </label>
+          <label className="setting-row setting-row-stacked">
+            <span>
+              Check command
+              <small>
+                Symposium runs it in a worker's folder after each of its changes and shows the
+                result on the diff, for example <code>npm test</code>. It runs the worker's code
+                without asking you each time. Empty: no check.
+              </small>
+            </span>
+            <input
+              value={check}
+              maxLength={1000}
+              placeholder="npm test"
+              spellCheck={false}
+              onChange={(event) => setCheck(event.target.value)}
+              onBlur={saveCheck}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
             />
           </label>
           <div className="setting-row setting-row-danger">

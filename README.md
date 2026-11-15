@@ -18,6 +18,7 @@ Each group chat is one project folder. You add agents from any provider (Claude 
 - **Any model, any setup.** Pick each agent's model from the provider's own list or type any name, set its effort, file access and terminal, and change them later without firing anyone.
 - **Git isolation.** Every worker edits in its own branch and worktree. Its changes show up in the chat as a diff. Nothing reaches your project until you click **Merge**.
 - **See the work as it happens.** Each agent's card shows what it is doing: the files it reads and edits and the commands it runs. The **Code** tab shows the project or any worktree as a file tree, and an agent's changes live, before they are committed.
+- **Every change is checked before you look at it.** Give the project a check command, such as `npm test`. Symposium runs it in the worker's worktree after each change and puts the result on the diff: passed, or failed with the output.
 - **Terminal commands, with your approval.** A worker asks before it runs a command: **Allow once**, **Always allow** or **Deny**, right in the chat. Only that agent waits. You can give an agent an allow-list or let it run freely in its own worktree. `git push`, `sudo` and anything that reaches outside its folder always ask.
 - **A terminal and VS Code for you.** Run your own commands in the project or a worktree from the Code tab, and open the project with every worktree side by side in VS Code.
 - **Memory that stays with the agent.** Each agent keeps its own memory file, and every agent reads `project.md` before working. Both belong to Symposium, not to the provider.
@@ -104,6 +105,7 @@ Agents run on your machine with your logins, so the safe choice is the default.
 
 - Workers can edit files only inside their own worktree. The lead and reviewers can only read.
 - An agent runs a terminal command only if the engine allows it. By default only workers have a terminal, and each of their commands waits for you. Some commands always wait for you, whatever the mode: `git push`, deleting a branch, `sudo`, and anything that reaches outside the agent's folder.
+- The check command is yours: you type it in **Settings**, and Symposium runs it, never an agent. It runs on the worker's changes without asking each time, so it executes code an agent wrote. Leave it empty if you do not want that.
 - These command checks read the command as text. They catch the obvious cases; they are not a sandbox. Give **Full auto** only to agents and projects you would trust with your own terminal.
 - Claude Code runs in restricted mode and Antigravity in its sandbox. If an agent still changes a file outside its folder, Symposium says so in the chat.
 - The lead's plan waits for your approval, and the engine enforces it: until you click **Approve plan**, the lead's assignments reach nobody.

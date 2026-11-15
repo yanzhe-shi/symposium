@@ -1,3 +1,4 @@
+import { MAX_CHECK_COMMAND_LENGTH } from '../checks.js';
 import type { FastifyInstance } from 'fastify';
 import type { HumanTerminal } from '../commands/terminal.js';
 import type { AppContext } from '../context.js';
@@ -81,6 +82,7 @@ export function registerGroupRoutes(
             maxRounds: { type: 'integer', minimum: 1, maximum: MAX_ROUNDS_LIMIT },
             maxParallel: { type: 'integer', minimum: 1, maximum: MAX_PARALLEL_LIMIT },
             leadAsksFirst: { type: 'boolean' },
+            checkCommand: { type: 'string', maxLength: MAX_CHECK_COMMAND_LENGTH },
           },
           additionalProperties: false,
         },
@@ -93,6 +95,7 @@ export function registerGroupRoutes(
         maxRounds: request.body.maxRounds,
         maxParallel: request.body.maxParallel,
         leadAsksFirst: request.body.leadAsksFirst,
+        checkCommand: request.body.checkCommand?.trim(),
       })!;
       ctx.hub.broadcast(group.id, { type: 'group.changed', group });
       // A higher cap may let waiting agents start.

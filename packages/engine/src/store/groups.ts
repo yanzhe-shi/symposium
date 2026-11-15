@@ -13,6 +13,7 @@ interface GroupRow {
   max_rounds: number;
   max_parallel: number;
   lead_asks_first: number;
+  check_command: string;
   created_at: number;
 }
 
@@ -25,6 +26,7 @@ function toGroup(row: GroupRow): Group {
     maxRounds: row.max_rounds,
     maxParallel: row.max_parallel,
     leadAsksFirst: row.lead_asks_first === 1,
+    checkCommand: row.check_command,
     createdAt: row.created_at,
   };
 }
@@ -67,6 +69,7 @@ export function updateGroup(
     maxRounds?: number;
     maxParallel?: number;
     leadAsksFirst?: boolean;
+    checkCommand?: string;
     baseBranch?: string;
   },
 ): Group | undefined {
@@ -74,12 +77,13 @@ export function updateGroup(
   if (!group) return undefined;
   db.prepare(
     `UPDATE groups SET name = ?, max_rounds = ?, max_parallel = ?, lead_asks_first = ?,
-     base_branch = ? WHERE id = ?`,
+     check_command = ?, base_branch = ? WHERE id = ?`,
   ).run(
     changes.name ?? group.name,
     changes.maxRounds ?? group.maxRounds,
     changes.maxParallel ?? group.maxParallel,
     (changes.leadAsksFirst ?? group.leadAsksFirst) ? 1 : 0,
+    changes.checkCommand ?? group.checkCommand,
     changes.baseBranch ?? group.baseBranch,
     id,
   );

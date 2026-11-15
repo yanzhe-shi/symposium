@@ -44,8 +44,18 @@ export interface Workspace {
 export interface RunnerHooks {
   /** Gives the agent somewhere to work. */
   prepareWorkspace(group: Group, agent: Agent): Promise<Workspace>;
-  /** Called after each successful turn, e.g. to commit a worker's changes and post the diff. */
-  afterTurn(group: Group, agent: Agent, workspace: Workspace, reply: Message): Promise<void>;
+  /**
+   * Called after each successful turn, e.g. to commit a worker's changes, post the diff and
+   * run the project's check on it. The reply is handed on only when this has finished, so
+   * whoever reads it next also sees how the check went. `signal` fires when the agent is stopped.
+   */
+  afterTurn(
+    group: Group,
+    agent: Agent,
+    workspace: Workspace,
+    reply: Message,
+    signal: AbortSignal,
+  ): Promise<void>;
   /** Called once the whole group has been idle for a while, to let the scribe update project.md. */
   onIdle(group: Group, signal: AbortSignal): Promise<void>;
   /**
@@ -856,7 +866,7 @@ export class TeamRunner {
       }
 
       try {
-        await this.hooks.afterTurn(group, agent, workspace, reply);
+        await this.hooks.afterTurn(group, agent, workspace, reply, signal);
       } catch (error) {
         postNotice(
           ctx,

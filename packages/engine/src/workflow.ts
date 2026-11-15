@@ -1,6 +1,7 @@
 import { rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { postMessage, postNotice, setMessageMeta } from './chat.js';
+import { runCheck } from './checks.js';
 import type { CommandApprovals } from './commands/approvals.js';
 import type { AppContext } from './context.js';
 import { badRequest, conflict, notFound } from './errors.js';
@@ -20,7 +21,8 @@ import type { RunnerHooks, Workspace } from './routing/runner.js';
 import { updateProjectFile } from './scribe.js';
 import { getAgent } from './store/agents.js';
 import { logEvent } from './store/events.js';
-import { listMessagesSince } from './store/messages.js';
+import { getGroup } from './store/groups.js';
+import { getMessage, listMessagesSince } from './store/messages.js';
 import { refreshWorkspaceFile, workspaceFilePath } from './vscode.js';
 
 /** Pending diff messages for an agent, newest last. */
@@ -33,14 +35,17 @@ function pendingDiffMessages(ctx: AppContext, group: Group, agentId: string): Me
   );
 }
 
-/** Commits a worker's changes on its branch and shows the branch's pending diff in the chat. */
+/**
+ * Commits a worker's changes on its branch and shows the branch's pending diff in the chat.
+ * Returns the diff's message, or nothing when the turn changed no files.
+ */
 async function recordWork(
   ctx: AppContext,
   group: Group,
   agent: Agent,
   workspace: Workspace,
   reply: Message,
-) {
+): Promise<Message | undefined> {
   if (!workspace.branch) return;
   const commit = await commitWork(
     { path: workspace.cwd, branch: workspace.branch },
@@ -62,7 +67,7 @@ async function recordWork(
     if (old.meta?.type === 'diff') setMessageMeta(ctx, old, { ...old.meta, status: 'superseded' });
   }
   const count = diff.files.length;
-  postMessage(ctx, {
+  return postMessage(ctx, {
     groupId: group.id,
     authorKind: 'system',
     body: `${agent.name} changed ${count} file${count === 1 ? '' : 's'} on ${workspace.branch}. Review the diff, then merge it into ${group.baseBranch} or discard it.`,
@@ -75,6 +80,43 @@ async function recordWork(
       ...diff,
     },
   });
+}
+
+/**
+ * Runs the group's check command on a worker's change, in its worktree, and writes the result
+ * on the diff's card. The human chose the command; the engine runs it, never the agent.
+ */
+async function checkWork(
+  ctx: AppContext,
+  group: Group,
+  agent: Agent,
+  workspace: Workspace,
+  card: Message,
+  signal: AbortSignal,
+): Promise<void> {
+  // Read now, not at the start of the turn: the human may have changed it since.
+  const command = getGroup(ctx.db, group.id)?.checkCommand.trim();
+  if (!command || card.meta?.type !== 'diff') return;
+  setMessageMeta(ctx, card, {
+    ...card.meta,
+    check: { command, status: 'running', exitCode: null, output: '', durationMs: 0 },
+  });
+  const check = await runCheck(command, workspace.cwd, { signal });
+  logEvent(ctx.db, {
+    groupId: group.id,
+    agentId: agent.id,
+    kind: 'check.run',
+    detail: {
+      command,
+      status: check.status,
+      exitCode: check.exitCode,
+      durationMs: check.durationMs,
+      commit: card.meta.commit,
+    },
+  });
+  // The card may have been merged, discarded or replaced while the check ran.
+  const latest = getMessage(ctx.db, card.id);
+  if (latest?.meta?.type === 'diff') setMessageMeta(ctx, latest, { ...latest.meta, check });
 }
 
 /**
@@ -112,8 +154,13 @@ export function createRunnerHooks(ctx: AppContext, approvals: CommandApprovals):
       refreshWorkspaceFile(ctx, group);
       return { cwd: worktree.path, branch: worktree.branch };
     },
-    afterTurn: (group, agent, workspace, reply) =>
-      oneAtATime(group.id, () => recordWork(ctx, group, agent, workspace, reply)),
+    afterTurn: async (group, agent, workspace, reply, signal) => {
+      const card = await oneAtATime(group.id, () =>
+        recordWork(ctx, group, agent, workspace, reply),
+      );
+      // Outside the git queue: a slow test run must not hold up the other agents' commits.
+      if (card) await checkWork(ctx, group, agent, workspace, card, signal);
+    },
     onIdle: async (group, signal) => {
       await updateProjectFile(ctx, group, signal);
     },

@@ -87,6 +87,11 @@ export const migrations: readonly string[] = [
   `
   ALTER TABLE agents ADD COLUMN role_id TEXT;
   `,
+
+  // 7: checks (milestone 20). The command the engine runs on each worker's change. Empty: none.
+  `
+  ALTER TABLE groups ADD COLUMN check_command TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 export function getSchemaVersion(db: Database.Database): number {
