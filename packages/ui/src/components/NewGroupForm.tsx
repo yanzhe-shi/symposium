@@ -3,16 +3,20 @@ import type {
   Group,
   ProviderId,
   ProviderInfo,
+  SavedTeam,
   SystemInfo,
 } from '@symposium/engine/protocol';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api.ts';
 import { projectFolderFor } from '../text-format.ts';
 import { InlineText } from './RichText.tsx';
+import { savedTeamSummary } from './TeamsDialog.tsx';
 
 /** The providers a starter team can be hired on. Mirrors STARTER_PROVIDERS in the engine. */
 const STARTER_PROVIDERS: ProviderId[] = ['claude-code', 'antigravity', 'mock'];
 const NO_TEAM = 'none';
+/** In the team picker a saved team's value is this plus its id. */
+const SAVED = 'saved:';
 
 /** What a new user needs, and whether this computer has it. */
 function SetupChecks({ system }: { system: SystemInfo }) {
@@ -95,6 +99,7 @@ export function NewGroupForm({
   // Undefined until the human types or picks a folder: until then it follows the name.
   const [chosenFolder, setChosenFolder] = useState<string>();
   const [projectsFolder, setProjectsFolder] = useState<string>();
+  const [savedTeams, setSavedTeams] = useState<SavedTeam[]>([]);
   const [browsing, setBrowsing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -108,11 +113,19 @@ export function NewGroupForm({
       })
       // Without it the folder is simply typed by hand, as before.
       .catch(() => undefined);
+    api
+      .teams()
+      .then((teams) => {
+        if (active) setSavedTeams(teams);
+      })
+      // Without them only the starter teams are offered.
+      .catch(() => undefined);
     return () => {
       active = false;
     };
   }, []);
 
+  const chosenSaved = savedTeams.find((saved) => SAVED + saved.id === team);
   const suggested = projectsFolder ? projectFolderFor(projectsFolder, name) : '';
   const folderPath = chosenFolder ?? suggested;
 
@@ -125,7 +138,11 @@ export function NewGroupForm({
         await api.createGroup({
           name: name.trim(),
           folderPath: folderPath.trim(),
-          ...(team === NO_TEAM ? {} : { starterTeam: team as ProviderId }),
+          ...(team === NO_TEAM
+            ? {}
+            : team.startsWith(SAVED)
+              ? { team: team.slice(SAVED.length) }
+              : { starterTeam: team as ProviderId }),
         }),
       );
     } catch (err) {
@@ -201,13 +218,20 @@ export function NewGroupForm({
               {system && !system.providers[provider.id] ? ' (not found on this computer)' : ''}
             </option>
           ))}
+          {savedTeams.map((saved) => (
+            <option key={saved.id} value={SAVED + saved.id}>
+              Your saved team "{saved.name}"
+            </option>
+          ))}
           <option value={NO_TEAM}>No team yet: I will hire them myself</option>
         </select>
       </label>
       <p className="muted small">
         {team === NO_TEAM
           ? 'Hire a lead first in the Team panel, then the rest.'
-          : 'Lea, Ada, Rex and Sam are hired with the group. You can change their models and permissions, hire more or fire anyone in the Team panel.'}
+          : chosenSaved
+            ? `${savedTeamSummary(chosenSaved)} ${chosenSaved.members.length === 1 ? 'is' : 'are'} hired with the group, set up as you saved them${chosenSaved.members.some((member) => member.hasMemory) ? ', with what they remember' : ''}.`
+            : 'Lea, Ada, Rex and Sam are hired with the group. You can change their models and permissions, hire more or fire anyone in the Team panel.'}
       </p>
       {error && <p className="form-error">{error}</p>}
       <div className="form-actions">

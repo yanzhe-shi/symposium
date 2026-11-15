@@ -16,6 +16,7 @@ import { PersonPlusIcon } from './icons.tsx';
 import { RoleBadge } from './RoleBadge.tsx';
 import { RolesDialog } from './RolesDialog.tsx';
 import { MemoryDialog } from './MemoryDialog.tsx';
+import { SendAgentDialog, TeamsDialog } from './TeamsDialog.tsx';
 
 interface TeamPanelProps {
   group: Group;
@@ -104,6 +105,8 @@ export function TeamPanel({
   const [editing, setEditing] = useState<Agent>();
   const [memoryOf, setMemoryOf] = useState<Agent>();
   const [managingRoles, setManagingRoles] = useState(false);
+  const [sending, setSending] = useState<Agent>();
+  const [managingTeams, setManagingTeams] = useState(false);
   const [error, setError] = useState<string>();
 
   async function fire(agent: Agent): Promise<void> {
@@ -145,7 +148,7 @@ export function TeamPanel({
         <p className="muted small empty-hint">
           Start with a <strong>lead</strong>: it plans the work, asks you to approve the plan and
           proposes the rest of the team. Add a <strong>scribe</strong> on a cheap model to keep
-          project.md current.
+          project.md current. Or hire a team you saved before with <strong>Teams</strong>.
         </p>
       )}
       <ul className="agent-list">
@@ -240,6 +243,14 @@ export function TeamPanel({
                 )}
                 <button
                   type="button"
+                  className="link-button"
+                  title={`Hire ${agent.name} into another group, with their memory`}
+                  onClick={() => setSending(agent)}
+                >
+                  Send to…
+                </button>
+                <button
+                  type="button"
                   className="link-button danger"
                   onClick={() => void fire(agent)}
                 >
@@ -263,7 +274,21 @@ export function TeamPanel({
         >
           Roles
         </button>
+        <button
+          type="button"
+          className="button-secondary"
+          title="Save this team to hire it again in another group, or hire a saved team here"
+          onClick={() => setManagingTeams(true)}
+        >
+          Teams
+        </button>
       </div>
+      {managingTeams && (
+        <TeamsDialog group={group} team={team} onClose={() => setManagingTeams(false)} />
+      )}
+      {sending && (
+        <SendAgentDialog group={group} agent={sending} onClose={() => setSending(undefined)} />
+      )}
       {managingRoles && (
         <RolesDialog
           roles={catalog.roles}

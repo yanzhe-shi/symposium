@@ -9,6 +9,7 @@ import type {
   Group,
   GroupUsage,
   HireRequest,
+  HireTeamResult,
   Message,
   ModelList,
   OpenInEditorRequest,
@@ -18,6 +19,9 @@ import type {
   ProviderInfo,
   RoleDraft,
   RoleInfo,
+  SavedTeam,
+  SaveTeamRequest,
+  SendAgentRequest,
   ServerEvent,
   SystemInfo,
   TeamStatus,
@@ -93,6 +97,19 @@ export const api = {
     send<Agent>('PATCH', `${groupUrl(groupId)}/agents/${agentId}`, changes),
   fire: (groupId: string, agentId: string) =>
     send<Agent>('DELETE', `${groupUrl(groupId)}/agents/${agentId}`),
+
+  /** The teams saved to be hired again, in any group. */
+  teams: () => request<SavedTeam[]>('/api/teams'),
+  saveTeam: (groupId: string, input: SaveTeamRequest) =>
+    send<SavedTeam>('POST', `${groupUrl(groupId)}/save-team`, input),
+  /** Deletes a saved team. Answers with the ones that remain. Agents hired from it stay. */
+  removeTeam: (teamId: string) =>
+    send<SavedTeam[]>('DELETE', `/api/teams/${encodeURIComponent(teamId)}`),
+  hireTeam: (groupId: string, teamId: string) =>
+    send<HireTeamResult>('POST', `${groupUrl(groupId)}/hire-team`, { teamId }),
+  /** Hires a copy of the agent into another group, with its memory unless switched off. */
+  sendAgent: (groupId: string, agentId: string, input: SendAgentRequest) =>
+    send<Agent>('POST', `${groupUrl(groupId)}/agents/${agentId}/send`, input),
 
   messages: (groupId: string, limit = MAX_PAGE_SIZE) =>
     request<Message[]>(`${groupUrl(groupId)}/messages?limit=${limit}`),

@@ -17,7 +17,7 @@ Pick the row for your computer. You need git 2.28 or newer in every case (`git -
 
 The packages are for Intel and AMD computers (x86_64) with Fedora 35, RHEL 9, Debian 12, Ubuntu 22.04 or anything newer. Each one brings its own Node.js, so you install nothing else first.
 
-Put the package and `install.sh` in one folder and run:
+Download the package for your system and `install.sh` from the **Releases** page of the Symposium repository, put them in one folder and run:
 
 ```sh
 sh install.sh
@@ -154,6 +154,8 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **Ask the lead for a role.** Tell your lead what kind of teammate you need. It can write the role and propose a hire for it. The card shows the job description; hiring adds the role, declining adds nothing.
 - **Agent files stay out of your git.** Claude Code, Antigravity and similar programs keep files of their own, such as `.claude/`, `CLAUDE.md` or `AGENTS.md`. Symposium has git ignore them in every project, through the repo's `.git/info/exclude`, so they never show up in a diff. Your `.gitignore` is not changed, and a file your project already tracks is still tracked.
 - **Fire** an agent from the Team panel. Its branch, worktree and memory are kept. Hiring the same name again brings it back with its memory.
+- **Save a team** (**Teams** in the Team panel): keeps who is on the team and how each agent is set up, under a name. Pick the saved team when you create a group, or use **Hire here** to add it to a group you have. Switch on **Save what they remember too** if the agents should bring their memory notes along; without it they start fresh. Someone whose name or seat (lead, scribe) is taken in the group is left out, and the chat says who.
+- **Send to…** on an agent's card hires the same agent into another group, with a copy of its memory, marked as coming from this project. The agent works in both groups unless you switch on **Leave this team**. Its branch and its work here stay here.
 - **Terminal commands** (in **Edit**): **Off**, **Ask every time**, **Allow-list** or **Full auto**. The allow-list takes one command per line, and `*` matches anything: `pnpm test`, `npm run *`. Every part of a line like `a && b` must be on the list. `git push`, deleting a branch, `sudo` and anything outside the agent's folder ask in every mode.
 - **Activity** on an agent's card lists what it did lately: files read and edited, commands and how they ended.
 - **Code tab**: browse the project folder or an agent's worktree, see an agent's uncommitted changes under **Live changes**, and run your own commands under **Terminal**. Your commands run as they would in your own shell. Click **Post to chat** to show the team the result.
@@ -171,6 +173,7 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - `~/.symposium/worktrees/<group id>/<agent id>/`: each worker's git worktree.
 - `~/.symposium/workspaces/`: one VS Code workspace file per group.
 - `~/.symposium/roles/`: the roles you wrote or changed, one small Markdown file each.
+- `~/.symposium/teams/`: the teams you saved, one JSON file each. Copy a file to another computer to use the team there.
 - `~/symposium-projects/`: where new projects go unless you choose another folder. Set `SYMPOSIUM_PROJECTS_DIR` to change it.
 - Your project folder: your code, its git history and `project.md`. Worker branches are named `symposium/<name>`.
 

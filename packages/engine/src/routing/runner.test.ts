@@ -633,9 +633,10 @@ describe('stopping', () => {
     await hire('Ada', 'worker');
     await say('/stop');
     await say('/stop @Ada');
-    await waitFor(
-      () => t.db.prepare("SELECT 1 FROM messages WHERE body LIKE 'Ada was%'").get() !== undefined,
-    );
+    // Each /stop answers when its own work is done, so wait for both answers.
+    const said = (start: string) =>
+      t.db.prepare('SELECT 1 FROM messages WHERE body LIKE ?').get(`${start}%`) !== undefined;
+    await waitFor(() => said('Ada was') && said('Nothing was'));
     const lines = await transcript();
     expect(lines).toContain('system: Nothing was running.');
     expect(lines).toContain('system: Ada was not working on anything.');

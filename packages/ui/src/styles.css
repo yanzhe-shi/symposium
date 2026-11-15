@@ -1742,6 +1742,42 @@ input.switch:checked::after {
   flex: 1;
 }
 
+/* Saved teams and sending an agent */
+
+.saved-team-form > * + * {
+  margin-top: 0.75rem;
+}
+
+.saved-team-heading {
+  margin-top: 1.1rem;
+  font-size: 0.95rem;
+}
+
+.saved-team-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.saved-team-list li {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.saved-team-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.form-done {
+  color: var(--muted);
+}
+
 /* The role editor */
 
 .roles-dialog {

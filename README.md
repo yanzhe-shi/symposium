@@ -23,6 +23,7 @@ Each group chat is one project folder. You add agents from any provider (Claude 
 - **Terminal commands, with your approval.** A worker asks before it runs a command: **Allow once**, **Always allow** or **Deny**, right in the chat. Only that agent waits. You can give an agent an allow-list or let it run freely in its own worktree. `git push`, `sudo` and anything that reaches outside its folder always ask.
 - **A terminal and VS Code for you.** Run your own commands in the project or a worktree from the Code tab, and open the project with every worktree side by side in VS Code.
 - **Memory that stays with the agent.** Each agent keeps its own memory file, and every agent reads `project.md` before working. Both belong to Symposium, not to the provider.
+- **Teams you can take along.** Save a team with its settings, and its memory if you like, and hire it into your next project in one step. Or send one agent to another group with what it remembers.
 - **You stay in charge.** Work starts only when you approve the lead's plan, and stops only when you say so: **Stop all**, **Stop** on one agent, `/stop`, or `/now @Ada …` to interrupt Ada with something urgent. Approve or decline the hires the lead proposes.
 
 ## Quick start
@@ -96,7 +97,7 @@ In every mode these always ask: `git push`, deleting a branch, `sudo`, and anyth
 
 **Live view.** While an agent works, its card lists what it does, and every tool call and command goes into the audit log. The **Code** tab shows files read-only, an agent's uncommitted changes as a live diff, and a **Terminal** for your own commands. Agents see your terminal's output only if you click **Post to chat**.
 
-**Memory.** An agent saves notes by adding a ` ```memory ` block to its reply. Symposium removes the block from the chat, appends it to the agent's memory file and includes it in every later turn. You can read and edit any agent's memory from the Team panel.
+**Memory.** An agent saves notes by adding a ` ```memory ` block to its reply. Symposium removes the block from the chat, appends it to the agent's memory file and includes it in every later turn. You can read and edit any agent's memory from the Team panel. Because the memory is Symposium's, it goes along when you send an agent to another group or save the team with its memory, whatever provider or model the agent runs on.
 
 **Hire proposals.** The lead can propose a teammate with a ` ```hire ` block. It appears in the chat with **Hire** and **Decline** buttons.
 
