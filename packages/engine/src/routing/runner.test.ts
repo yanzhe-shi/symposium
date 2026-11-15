@@ -384,6 +384,34 @@ describe('plan approval', () => {
     expect((await decide(cards[1]!, 'approve-plan')).statusCode).toBe(409);
   });
 
+  it('lets a hand-off through without a card when the human starts the message with /go', async () => {
+    await hire('Lea', 'lead', [
+      { text: 'Plan: a cart. @Ada build the cart' },
+      { text: 'Done.' },
+      { text: 'Plan: a header. @Ada build the header' },
+    ]);
+    await hire('Ada', 'worker', [{ text: 'Built it.' }]);
+    await say('/go Build a shop');
+    await settle();
+
+    expect(await transcript()).toEqual([
+      'CEO: /go Build a shop',
+      'Lea: Plan: a cart. @Ada build the cart',
+      'Ada: Built it.',
+      'Lea: Done.',
+    ]);
+    expect(await planCards()).toHaveLength(0);
+    const kinds = listEvents(t.db, group.id).map((event) => event.kind);
+    expect(kinds).toContain('plan.preapproved');
+    expect(kinds).not.toContain('plan.held');
+
+    // The approval was for that message only: the next one waits for its card again.
+    await say('Now a header');
+    await settle();
+    expect(await planCards()).toHaveLength(1);
+    expect(t.mocks.get('Ada')!.calls).toHaveLength(1);
+  });
+
   it('starts nothing when the human declines, and asks again for the next plan', async () => {
     await hire('Lea', 'lead', [{ text: '@Ada build the cart' }, { text: '@Ada build a basket' }]);
     await hire('Ada', 'worker', [{ text: 'Built it.' }]);

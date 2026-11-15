@@ -272,6 +272,14 @@ export class TeamRunner {
       return;
     }
 
+    // `/go` is the human's approval given ahead: the gate in `routeReply` reads it off the message.
+    if (command === 'go' && group.leadAsksFirst) {
+      logEvent(this.ctx.db, {
+        groupId: group.id,
+        kind: 'plan.preapproved',
+        detail: { messageId: message.id },
+      });
+    }
     const urgent = command === 'now';
     for (const agent of this.recipientsOfHuman(group, message)) {
       const turn = this.groups.get(group.id)?.inboxes.get(agent.id)?.turn;
@@ -739,15 +747,21 @@ export class TeamRunner {
     if (recipients.length === 0) return;
 
     // The human approves the plan before the lead's work starts. This is the gate.
-    if (
-      author.role === 'lead' &&
-      group.leadAsksFirst &&
-      !threadHasApprovedPlan(this.ctx.db, groupId, threadId)
-    ) {
+    if (author.role === 'lead' && group.leadAsksFirst && !this.planApproved(groupId, threadId)) {
       this.holdPlan(group, author, reply, recipients, threadId, round);
       return;
     }
     this.handOn(group, reply, recipients, threadId, round, returned);
+  }
+
+  /**
+   * Whether the human has approved the lead's plan for this thread: with **Approve plan** on a
+   * card, or ahead of time by starting the thread's message with `/go`.
+   */
+  private planApproved(groupId: string, threadId: number): boolean {
+    if (threadHasApprovedPlan(this.ctx.db, groupId, threadId)) return true;
+    const first = getMessage(this.ctx.db, threadId);
+    return first?.authorKind === 'human' && parseCommand(first.body) === 'go';
   }
 
   /** Puts a reply in its recipients' inboxes, one round deeper, unless the thread is at its limit. */

@@ -210,6 +210,13 @@ describe('prompt context', () => {
 });
 
 describe('parseCommand', () => {
+  it('recognises /go, which approves a plan ahead', () => {
+    expect(parseCommand('/go build the cart')).toBe('go');
+    expect(parseCommand('/Go')).toBe('go');
+    expect(parseCommand('/good idea')).toBeUndefined();
+    expect(parseCommand('let us /go')).toBeUndefined();
+  });
+
   it('recognises /stop and /now at the start of a message only', () => {
     expect(parseCommand('/stop')).toBe('stop');
     expect(parseCommand('  /STOP @Ada')).toBe('stop');

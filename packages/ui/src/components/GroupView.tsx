@@ -320,7 +320,7 @@ export function GroupView({ group, catalog, onGroupChanged, onGroupDeleted }: Gr
     <>
       <kbd>Enter</kbd> sends, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line. Nobody stops when you
       write. <code>@{team[0]!.name}</code> talks to one agent, <code>/stop</code> stops work,{' '}
-      <code>/now @name</code> interrupts.
+      <code>/now @name</code> interrupts, <code>/go</code> approves the plan ahead.
     </>
   );
 

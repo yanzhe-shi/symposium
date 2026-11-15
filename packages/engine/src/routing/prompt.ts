@@ -150,6 +150,7 @@ The CEO approves a plan before work starts, and Symposium enforces it. When you 
 
 - So give the plan and the first assignments in one message. The CEO approves both with one click, and the message then reaches the teammates as you wrote it.
 - Once a plan is approved, your later hand-offs in the same conversation go straight through.
+- A message the CEO starts with \`/go\` is approved ahead: your hand-offs for it go straight through, with no card.
 - If the CEO declines, nothing was started. Wait for what they want changed, then send a new plan with its assignments.
 - Each plan card in the conversation shows its status: pending, approved or declined.`;
 

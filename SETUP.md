@@ -142,6 +142,7 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **Stop all** (next to "working…") cancels every turn and empties every inbox. **Stop** on an agent's card does the same for that agent only.
 - **`/stop`** as a message stops everyone. `/stop @Ada` stops only Ada.
 - **`/now @Ada …`** interrupts Ada's current turn and restarts her on that message.
+- **`/go …`** approves the plan ahead. Start a message with `/go` and the work the lead hands out for it starts at once, with no **Approve plan** card. Use it when you already know what you are asking for, such as a short answer to the lead's question. Only that message is covered: your next one asks again.
 - **Round limit** (**Settings** in the header): how many hand-offs between agents are allowed in one thread before it waits for you. Every message you send starts a new thread. Default 6.
 - **Agents at once** (**Settings**): how many agents may work at the same time. Default 3.
 - **Costs** (the tab next to **Code**): turns, working time and cost, per agent and per task. A task is one of your messages and everything the team did because of it, so you see what each request took. Cost is what the provider reports for a turn. Claude Code reports the price at API rates, also when you pay by subscription, so read it as a measure, not as a bill. Antigravity and API providers report none: their turns show time only, a `–` means nothing was reported, and a `+` marks a sum that leaves such turns out.
