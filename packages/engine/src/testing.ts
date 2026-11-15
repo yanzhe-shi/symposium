@@ -2,7 +2,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MockAdapter } from '@symposium/adapters';
+import { MockAdapter, type ProviderId } from '@symposium/adapters';
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify';
 import type { AdapterFactory } from './context.js';
 import { openDatabase, type Db } from './db/database.js';
@@ -28,6 +28,8 @@ export async function createTestApp(
     scribeDelayMs?: number;
     liveChangesIntervalMs?: number;
     approvalTimeoutMs?: number;
+    /** Whether agents' processes can be sandboxed. Left out: no, on every computer. */
+    canSandbox?: (provider?: ProviderId) => Promise<boolean>;
     vscodeCommand?: string;
   } = {},
 ): Promise<TestApp> {
@@ -48,6 +50,8 @@ export async function createTestApp(
     db,
     dataDir,
     createAdapter: options.createAdapter ?? mockFactory,
+    // The same on every computer: no sandbox, unless a test is about it.
+    canSandbox: options.canSandbox ?? (async () => false),
     // Tests don't wait for the group to stay quiet before the scribe runs, unless they ask to.
     scribeDelayMs: options.scribeDelayMs ?? 0,
     liveChangesIntervalMs: options.liveChangesIntervalMs,

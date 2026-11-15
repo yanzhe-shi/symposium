@@ -2,6 +2,7 @@ import { rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { postMessage, postNotice, setMessageMeta } from './chat.js';
 import { runCheck } from './checks.js';
+import { sandboxFor } from './commands/sandbox.js';
 import type { CommandApprovals } from './commands/approvals.js';
 import type { AppContext } from './context.js';
 import { badRequest, conflict, notFound } from './errors.js';
@@ -101,7 +102,9 @@ async function checkWork(
     ...card.meta,
     check: { command, status: 'running', exitCode: null, output: '', durationMs: 0 },
   });
-  const check = await runCheck(command, workspace.cwd, { signal });
+  // The check runs the worker's code, so it is held to what the worker was.
+  const sandbox = await sandboxFor(ctx, group, { cwd: workspace.cwd, canEdit: true });
+  const check = await runCheck(command, workspace.cwd, { signal, sandbox });
   logEvent(ctx.db, {
     groupId: group.id,
     agentId: agent.id,

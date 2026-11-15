@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { createAdapter } from '@symposium/adapters';
+import { createAdapter, sandboxAvailable, type ProviderId } from '@symposium/adapters';
 import websocket from '@fastify/websocket';
 import Fastify, {
   type FastifyError,
@@ -41,6 +41,8 @@ export interface ServerDeps {
   vscodeCommand?: string;
   /** Tests pass a factory that returns mock adapters. */
   createAdapter?: AdapterFactory;
+  /** Whether agents' processes can be sandboxed here. Tests answer for themselves. */
+  canSandbox?: (provider?: ProviderId) => Promise<boolean>;
   /** How long a group must stay idle before the scribe updates project.md. */
   scribeDelayMs?: number;
   /** The shortest time between two pushes of one agent's live diff. */
@@ -73,6 +75,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     projectsDir: deps.projectsDir ?? DEFAULT_PROJECTS_DIR,
     vscodeCommand: deps.vscodeCommand ?? 'code',
     createAdapter: deps.createAdapter ?? defaultAdapterFactory,
+    canSandbox: deps.canSandbox ?? sandboxAvailable,
   };
 
   const approvals = new CommandApprovals(ctx, deps.approvalTimeoutMs);

@@ -15,6 +15,8 @@ interface GroupRow {
   lead_asks_first: number;
   check_command: string;
   auto_review: number;
+  sandbox: number;
+  sandbox_folders: string;
   created_at: number;
 }
 
@@ -29,6 +31,8 @@ function toGroup(row: GroupRow): Group {
     leadAsksFirst: row.lead_asks_first === 1,
     checkCommand: row.check_command,
     autoReview: row.auto_review === 1,
+    sandbox: row.sandbox === 1,
+    sandboxFolders: JSON.parse(row.sandbox_folders) as string[],
     createdAt: row.created_at,
   };
 }
@@ -73,6 +77,8 @@ export function updateGroup(
     leadAsksFirst?: boolean;
     checkCommand?: string;
     autoReview?: boolean;
+    sandbox?: boolean;
+    sandboxFolders?: string[];
     baseBranch?: string;
   },
 ): Group | undefined {
@@ -80,7 +86,8 @@ export function updateGroup(
   if (!group) return undefined;
   db.prepare(
     `UPDATE groups SET name = ?, max_rounds = ?, max_parallel = ?, lead_asks_first = ?,
-     check_command = ?, auto_review = ?, base_branch = ? WHERE id = ?`,
+     check_command = ?, auto_review = ?, sandbox = ?, sandbox_folders = ?, base_branch = ?
+     WHERE id = ?`,
   ).run(
     changes.name ?? group.name,
     changes.maxRounds ?? group.maxRounds,
@@ -88,6 +95,8 @@ export function updateGroup(
     (changes.leadAsksFirst ?? group.leadAsksFirst) ? 1 : 0,
     changes.checkCommand ?? group.checkCommand,
     (changes.autoReview ?? group.autoReview) ? 1 : 0,
+    (changes.sandbox ?? group.sandbox) ? 1 : 0,
+    JSON.stringify(changes.sandboxFolders ?? group.sandboxFolders),
     changes.baseBranch ?? group.baseBranch,
     id,
   );

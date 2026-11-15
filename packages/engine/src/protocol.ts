@@ -29,6 +29,13 @@ export interface Group {
    * Needs a reviewer on the team.
    */
   autoReview: boolean;
+  /**
+   * Whether agents' processes run in a sandbox: they can change only their own folder, and the
+   * places for keys and logins are hidden from them. Works where the computer allows it.
+   */
+  sandbox: boolean;
+  /** More folders a sandboxed agent may write to, such as a build cache. Full paths. */
+  sandboxFolders: string[];
   createdAt: number;
 }
 
@@ -520,6 +527,8 @@ export interface UpdateGroupRequest {
   leadAsksFirst?: boolean;
   checkCommand?: string;
   autoReview?: boolean;
+  sandbox?: boolean;
+  sandboxFolders?: string[];
 }
 
 export interface ErrorResponse {

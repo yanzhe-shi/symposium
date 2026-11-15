@@ -1,9 +1,27 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { dirname, join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runProcess } from './process.js';
-import { PROVIDER_STATE, bwrapArgs, sandboxAvailable, type Sandbox } from './sandbox.js';
+import {
+  PROVIDER_STATE,
+  bwrapArgs,
+  sandboxAvailable,
+  sessionBusPath,
+  type Sandbox,
+} from './sandbox.js';
+
+// The session bus filter needs a desktop session and xdg-dbus-proxy.
+const canFilterBus = await sandboxAvailable('antigravity');
 
 let dir: string;
 beforeEach(() => {
@@ -79,6 +97,7 @@ describe('bwrapArgs', () => {
   it('names where each provider keeps its login', () => {
     expect(PROVIDER_STATE['claude-code'].writable).toEqual(['.claude', '.claude.json']);
     expect(PROVIDER_STATE.antigravity.writable).toEqual(['.gemini']);
+    expect(PROVIDER_STATE.antigravity.sessionBus).toEqual(['org.freedesktop.secrets']);
     expect(PROVIDER_STATE.mock.writable).toEqual([]);
   });
 });
@@ -167,4 +186,32 @@ describe.skipIf(!(await sandboxAvailable()))('a process in the sandbox', () => {
     await new Promise((resolve) => setTimeout(resolve, 2500));
     expect(existsSync(join(worktree, 'late.txt'))).toBe(false);
   });
+
+  // Needs a desktop session and xdg-dbus-proxy as well.
+  it.skipIf(!canFilterBus)(
+    'reaches the session bus only through a filter, which goes when the process ends',
+    async () => {
+      const bus = sessionBusPath()!;
+      const runtime = dirname(bus);
+      const out = await run(
+        {
+          writable: [folder('w')],
+          readOnly: [],
+          hidden: [runtime],
+          sessionBus: ['org.example.Keys'],
+        },
+        `ls ${runtime}
+         test -S ${bus} && echo "a socket"
+         stat -c %i ${bus}`,
+      );
+      // Of everything in the session's folder, only the bus is there, and it is not the real one.
+      expect(out.slice(0, 2)).toEqual(['bus', 'a socket']);
+      expect(out[2]).not.toBe(String(statSync(bus).ino));
+      await vi.waitFor(() =>
+        expect(readdirSync(tmpdir()).filter((name) => name.startsWith('symposium-bus-'))).toEqual(
+          [],
+        ),
+      );
+    },
+  );
 });

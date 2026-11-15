@@ -97,6 +97,13 @@ export const migrations: readonly string[] = [
   `
   ALTER TABLE groups ADD COLUMN auto_review INTEGER NOT NULL DEFAULT 1;
   `,
+
+  // 9: the sandbox (milestone 25). Whether agents' processes are confined, and the folders
+  // the human lets them write to besides their own, as a JSON list.
+  `
+  ALTER TABLE groups ADD COLUMN sandbox INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE groups ADD COLUMN sandbox_folders TEXT NOT NULL DEFAULT '[]';
+  `,
 ];
 
 export function getSchemaVersion(db: Database.Database): number {

@@ -1,5 +1,10 @@
 import { MAX_CHECK_COMMAND_LENGTH } from '../checks.js';
 import type { FastifyInstance } from 'fastify';
+import {
+  MAX_SANDBOX_FOLDERS,
+  MAX_SANDBOX_FOLDER_LENGTH,
+  validateSandboxFolders,
+} from '../commands/sandbox.js';
 import type { HumanTerminal } from '../commands/terminal.js';
 import type { AppContext } from '../context.js';
 import { badRequest, notFound } from '../errors.js';
@@ -93,6 +98,12 @@ export function registerGroupRoutes(
             leadAsksFirst: { type: 'boolean' },
             checkCommand: { type: 'string', maxLength: MAX_CHECK_COMMAND_LENGTH },
             autoReview: { type: 'boolean' },
+            sandbox: { type: 'boolean' },
+            sandboxFolders: {
+              type: 'array',
+              maxItems: MAX_SANDBOX_FOLDERS,
+              items: { type: 'string', maxLength: MAX_SANDBOX_FOLDER_LENGTH },
+            },
           },
           additionalProperties: false,
         },
@@ -100,6 +111,8 @@ export function registerGroupRoutes(
     },
     async (request) => {
       requireGroup(ctx, request.params.groupId);
+      const folders = validateSandboxFolders(request.body.sandboxFolders ?? []);
+      if ('error' in folders) throw badRequest(folders.error);
       const group = updateGroup(ctx.db, request.params.groupId, {
         name: request.body.name?.trim(),
         maxRounds: request.body.maxRounds,
@@ -107,6 +120,8 @@ export function registerGroupRoutes(
         leadAsksFirst: request.body.leadAsksFirst,
         checkCommand: request.body.checkCommand?.trim(),
         autoReview: request.body.autoReview,
+        sandbox: request.body.sandbox,
+        sandboxFolders: request.body.sandboxFolders && folders.folders,
       })!;
       ctx.hub.broadcast(group.id, { type: 'group.changed', group });
       // A higher cap may let waiting agents start.

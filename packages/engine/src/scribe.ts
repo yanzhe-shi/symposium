@@ -1,5 +1,6 @@
 import { CancelledError, DEFAULT_TIMEOUT_MS } from '@symposium/adapters';
 import { postNotice } from './chat.js';
+import { sandboxFor } from './commands/sandbox.js';
 import type { AppContext } from './context.js';
 import { readProjectFile, writeProjectFile } from './project-file.js';
 import type { Group } from './protocol.js';
@@ -72,6 +73,11 @@ export async function updateProjectFile(
       effort: scribe.settings.effort,
       signal,
       timeoutMs: DEFAULT_TIMEOUT_MS,
+      sandbox: await sandboxFor(ctx, group, {
+        cwd: group.folderPath,
+        canEdit: false,
+        provider: scribe.provider,
+      }),
     });
     const content = unwrapMarkdown(result.text);
     if (content === '' || content.length > MAX_PROJECT_FILE) {

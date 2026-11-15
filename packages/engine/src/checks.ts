@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { bwrapArgs, type Sandbox } from '@symposium/adapters';
 import type { CheckResult, CheckStatus } from './protocol.js';
 
 export const DEFAULT_CHECK_TIMEOUT_MS = 10 * 60 * 1000;
@@ -12,15 +13,20 @@ const KILL_GRACE_MS = 2000;
  * The human chose the command in the group's settings. It runs after a worker's turn, on that
  * worker's changes, so it executes code an agent wrote.
  *
+ * With a `sandbox` it is confined as the worker was.
+ *
  * Never throws: a command that cannot start, runs too long or is stopped is a result too.
  */
-export function runCheck(
+export async function runCheck(
   command: string,
   cwd: string,
-  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  options: { timeoutMs?: number; signal?: AbortSignal; sandbox?: Sandbox } = {},
 ): Promise<CheckResult> {
   const started = Date.now();
   const { timeoutMs = DEFAULT_CHECK_TIMEOUT_MS, signal } = options;
+  const [program, args] = options.sandbox
+    ? ['bwrap', [...(await bwrapArgs(options.sandbox, cwd)), 'sh', '-c', command]]
+    : ['sh', ['-c', command]];
 
   return new Promise((resolve) => {
     if (signal?.aborted) {
@@ -41,7 +47,7 @@ export function runCheck(
     };
 
     // Its own process group, so stopping it also reaches whatever the command started.
-    const child = spawn('sh', ['-c', command], {
+    const child = spawn(program, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,

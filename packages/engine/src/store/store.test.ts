@@ -21,6 +21,8 @@ describe('groups store', () => {
       leadAsksFirst: true,
       checkCommand: '',
       autoReview: true,
+      sandbox: true,
+      sandboxFolders: [],
       createdAt: 1000,
     });
     expect(getGroup(db, 'missing')).toBeUndefined();

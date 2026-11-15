@@ -99,6 +99,8 @@ describe('prompt context', () => {
     leadAsksFirst: true,
     checkCommand: '',
     autoReview: true,
+    sandbox: true,
+    sandboxFolders: [],
     createdAt: 0,
   };
   let nextId = 1;

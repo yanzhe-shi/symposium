@@ -25,6 +25,8 @@ export interface PromptInput {
   access: AgentAccess;
   /** The agent's terminal: its command mode and allow-list. Left out, it has none. */
   terminal?: Pick<AgentSettings, 'commands' | 'allowlist'>;
+  /** Whether the agent's process runs in Symposium's sandbox. */
+  sandboxed?: boolean;
   /** Branch the agent works on, for workers. */
   branch?: string;
   projectMd: string;
@@ -78,13 +80,27 @@ function terminalRules(terminal: PromptInput['terminal'], access: AgentAccess): 
   ];
 }
 
+/** What a sandboxed agent is told, so that it does not fight what the kernel refuses. */
+function sandboxRules(access: AgentAccess): string[] {
+  return [
+    access === 'edit'
+      ? '- You work in a sandbox. Your tools and commands can change files only in your folder; package managers can still fill their caches. Anywhere else a write fails with "Read-only file system", and some folders outside the project look empty. That is intended: do not look for a way around it. Say what you could not do.'
+      : '- You work in a sandbox. Nothing you run can change a file, and some folders outside the project look empty. That is intended: do not look for a way around it.',
+    '- `/tmp` is yours alone and is emptied after every turn.',
+  ];
+}
+
 function accessRules(
   access: AgentAccess,
   branch: string | undefined,
   terminal: PromptInput['terminal'],
   checkCommand: string,
+  sandboxed: boolean,
 ): string {
-  const commands = terminalRules(terminal, access);
+  const commands = [
+    ...terminalRules(terminal, access),
+    ...(sandboxed && access !== 'none' ? sandboxRules(access) : []),
+  ];
   switch (access) {
     case 'edit':
       return [
@@ -201,7 +217,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       '- Never mention yourself. Never write "@CEO": the CEO reads every message, so just say what you have to say.',
       '- Teammates work at the same time, and the CEO can write at any moment without stopping anyone. Messages that arrive while you work reach you together in your next turn: answer them all in one reply.',
       '- Keep replies short and concrete. No greetings or sign-offs.',
-      accessRules(access, branch, terminal, group.checkCommand),
+      accessRules(access, branch, terminal, group.checkCommand, input.sandboxed === true),
       // The role text describes the role's usual access. Say so when this agent's differs.
       ...(access === roleAccess(agent.role)
         ? []

@@ -3,7 +3,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { delimiter, isAbsolute, join } from 'node:path';
-import { bwrapArgs, type Sandbox } from './sandbox.js';
+import { openSandbox, type Sandbox } from './sandbox.js';
 import { AdapterError, CancelledError, type AgentTask } from './types.js';
 
 export interface ProcessOptions {
@@ -106,10 +106,14 @@ export async function runProcess(options: ProcessOptions): Promise<ProcessResult
   const clock = options.clock ?? (timeoutMs === undefined ? undefined : new TurnClock(timeoutMs));
   if (signal?.aborted) throw new CancelledError();
   // In a sandbox, bubblewrap is what starts: it sets the sandbox up and then runs the command.
-  const [program, programArgs] = options.sandbox
-    ? ['bwrap', [...(await bwrapArgs(options.sandbox, cwd)), command, ...args]]
+  const sandbox = options.sandbox && (await openSandbox(options.sandbox, cwd));
+  const [program, programArgs] = sandbox
+    ? ['bwrap', [...sandbox.args, command, ...args]]
     : [command, args];
-  if (signal?.aborted) throw new CancelledError();
+  if (signal?.aborted) {
+    sandbox?.close();
+    throw new CancelledError();
+  }
 
   return new Promise((resolve, reject) => {
     const child = spawn(program, programArgs, {
@@ -126,6 +130,7 @@ export async function runProcess(options: ProcessOptions): Promise<ProcessResult
       if (settled) return;
       settled = true;
       clock?.stop();
+      sandbox?.close();
       signal?.removeEventListener('abort', onAbort);
       if (error) reject(error);
       else resolve(result!);

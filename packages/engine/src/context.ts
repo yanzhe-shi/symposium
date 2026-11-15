@@ -1,4 +1,4 @@
-import type { AgentAdapter } from '@symposium/adapters';
+import type { AgentAdapter, ProviderId } from '@symposium/adapters';
 import type { Db } from './db/database.js';
 import type { Agent } from './protocol.js';
 import type { RoleStore } from './roles.js';
@@ -19,4 +19,9 @@ export interface AppContext {
   /** The command that starts VS Code. */
   vscodeCommand: string;
   createAdapter: AdapterFactory;
+  /**
+   * Whether this computer can sandbox a process (Linux with bubblewrap), and with a provider:
+   * that provider's CLI.
+   */
+  canSandbox: (provider?: ProviderId) => Promise<boolean>;
 }

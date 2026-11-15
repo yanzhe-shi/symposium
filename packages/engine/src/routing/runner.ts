@@ -10,6 +10,7 @@ import {
   type CommandRequest,
 } from '@symposium/adapters';
 import { postMessage, postNotice, setMessageMeta } from '../chat.js';
+import { sandboxFor } from '../commands/sandbox.js';
 import type { AppContext } from '../context.js';
 import { badRequest, conflict } from '../errors.js';
 import { appendMemory, memoryForPrompt, readMemory } from '../memory.js';
@@ -987,6 +988,12 @@ export class TeamRunner {
       const { files, effort } = agent.settings;
       const access = turn.review && files !== 'none' ? 'read' : files;
       const commands = turn.review ? 'off' : agent.settings.commands;
+      // And the kernel holds the process to it, where this computer can.
+      const sandbox = await sandboxFor(ctx, group, {
+        cwd: workspace.cwd,
+        canEdit: access === 'edit',
+        provider: agent.provider,
+      });
       const promptInput = {
         group,
         agent,
@@ -996,6 +1003,7 @@ export class TeamRunner {
         roles: ctx.roles.list(),
         access,
         terminal: decideCommand ? agent.settings : undefined,
+        sandboxed: sandbox !== undefined,
         branch: workspace.branch,
         projectMd: projectForPrompt(await readProjectFile(group.folderPath)),
         memory: memoryForPrompt(await readMemory(ctx.dataDir, agent.id)),
@@ -1022,13 +1030,15 @@ export class TeamRunner {
             : undefined,
         onEvent: (event) => {
           this.onAgentEvent(group, agent, event);
-          this.warnAboutOutsideEdit(group, agent, event, outsideEdits);
+          // In the sandbox such an edit fails, or lands in a /tmp that goes with the turn.
+          if (!sandbox) this.warnAboutOutsideEdit(group, agent, event, outsideEdits);
           // Any tool call may have changed files: providers add tools this code has no name
           // for. Looking again is cheap, and it is paced.
           if (event.kind !== 'text') watching?.request();
         },
         signal,
         timeoutMs: DEFAULT_TIMEOUT_MS,
+        sandbox,
       });
 
       const parsed = parseReplyBlocks(result.text);
@@ -1051,6 +1061,7 @@ export class TeamRunner {
           model: agent.model,
           access,
           effort,
+          sandboxed: sandbox !== undefined,
           triggerMessageIds: triggers.map((trigger) => trigger.id),
           threadId,
           round,
