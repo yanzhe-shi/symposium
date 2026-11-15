@@ -350,6 +350,40 @@ describe('plan approval', () => {
     expect(kinds).toContain('plan.approved');
   });
 
+  it('releases every hand-off held in the thread with one approval', async () => {
+    // The CEO asks Ada directly, which is never held. Her report brings the lead back in, who
+    // hands out work a second time before the first plan was answered.
+    await hire('Lea', 'lead', [
+      { text: 'Plan. @Bob build the cart' },
+      { text: 'Good. @Bob also add a basket' },
+      { text: 'All done.' },
+    ]);
+    await hire('Ada', 'worker', [{ text: '@Lea the header is built' }]);
+    await hire('Bob', 'worker', [{ text: 'Cart built.' }, { text: 'Basket added.' }]);
+    await say('@Lea plan the shop, @Ada build the header');
+    await settle();
+
+    const cards = await planCards();
+    expect(cards.map((card) => card.meta)).toMatchObject([
+      { status: 'pending' },
+      { status: 'pending' },
+    ]);
+    expect(t.mocks.get('Bob')?.calls ?? []).toHaveLength(0);
+
+    expect((await decide(cards[0]!, 'approve-plan')).statusCode).toBe(200);
+    await settle();
+    expect((await planCards()).map((card) => (card.meta as { status: string }).status)).toEqual([
+      'approved',
+      'approved',
+    ]);
+    expect(t.mocks.get('Bob')!.calls.map((call) => call.trigger)).toEqual([
+      'Plan. @Bob build the cart',
+      'Good. @Bob also add a basket',
+    ]);
+    // The second card needs no click of its own any more.
+    expect((await decide(cards[1]!, 'approve-plan')).statusCode).toBe(409);
+  });
+
   it('starts nothing when the human declines, and asks again for the next plan', async () => {
     await hire('Lea', 'lead', [{ text: '@Ada build the cart' }, { text: '@Ada build a basket' }]);
     await hire('Ada', 'worker', [{ text: 'Built it.' }]);

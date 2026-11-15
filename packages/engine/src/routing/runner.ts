@@ -28,7 +28,12 @@ import { parseRoleFile, roleIdFor, validateRoleDraft } from '../roles.js';
 import { getAgent, listAgents } from '../store/agents.js';
 import { logEvent } from '../store/events.js';
 import { getGroup } from '../store/groups.js';
-import { getMessage, listMessages, threadHasApprovedPlan } from '../store/messages.js';
+import {
+  getMessage,
+  listMessages,
+  listPendingPlans,
+  threadHasApprovedPlan,
+} from '../store/messages.js';
 import { roleName, validateHire } from '../team.js';
 import { parseCommand } from './commands.js';
 import { parseMentions } from './mentions.js';
@@ -831,6 +836,20 @@ export class TeamRunner {
       return setMessageMeta(this.ctx, card, { ...meta, status: 'declined' });
     }
 
+    const updated = this.releasePlan(group, card);
+    // One approval covers the thread: a hand-off the lead wrote while this one waited goes out
+    // with it, instead of asking the human a second time.
+    for (const other of listPendingPlans(this.ctx.db, group.id, card.threadId!)) {
+      this.releasePlan(group, other);
+    }
+    return updated;
+  }
+
+  /** Marks a held plan approved and hands the lead's message on to whoever it names. */
+  private releasePlan(group: Group, card: Message): Message {
+    const meta = card.meta;
+    if (meta?.type !== 'plan') throw badRequest('That message is not a plan');
+    const detail = { cardMessageId: card.id, replyMessageId: meta.replyMessageId };
     const reply = getMessage(this.ctx.db, meta.replyMessageId);
     if (!reply || card.threadId === null) throw conflict('The message this plan held is gone.');
     const team = listAgents(this.ctx.db, group.id);

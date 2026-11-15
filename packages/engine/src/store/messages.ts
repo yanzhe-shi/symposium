@@ -121,6 +121,20 @@ export function threadHasApprovedPlan(db: Db, groupId: string, threadId: number)
   return row !== undefined;
 }
 
+/** The plans of this thread that still wait for the human, oldest first. */
+export function listPendingPlans(db: Db, groupId: string, threadId: number): Message[] {
+  const rows = db
+    .prepare(
+      `SELECT * FROM messages
+       WHERE group_id = ? AND thread_id = ?
+         AND json_extract(meta, '$.type') = 'plan'
+         AND json_extract(meta, '$.status') = 'pending'
+       ORDER BY id`,
+    )
+    .all(groupId, threadId) as MessageRow[];
+  return rows.map(toMessage);
+}
+
 /** Messages after `afterId`, oldest first, with no page limit. For building agent context. */
 export function listMessagesSince(db: Db, groupId: string, afterId: number): Message[] {
   const rows = db
