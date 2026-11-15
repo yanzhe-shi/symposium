@@ -21,7 +21,7 @@ Each group chat is one project folder. You add agents from any provider (Claude 
 - **Terminal commands, with your approval.** A worker asks before it runs a command: **Allow once**, **Always allow** or **Deny**, right in the chat. Only that agent waits. You can give an agent an allow-list or let it run freely in its own worktree. `git push`, `sudo` and anything that reaches outside its folder always ask.
 - **A terminal and VS Code for you.** Run your own commands in the project or a worktree from the Code tab, and open the project with every worktree side by side in VS Code.
 - **Memory that stays with the agent.** Each agent keeps its own memory file, and every agent reads `project.md` before working. Both belong to Symposium, not to the provider.
-- **You stay in charge.** Work stops only when you say so: **Stop all**, **Stop** on one agent, `/stop`, or `/now @Ada …` to interrupt Ada with something urgent. Approve or decline the hires the lead proposes.
+- **You stay in charge.** Work starts only when you approve the lead's plan, and stops only when you say so: **Stop all**, **Stop** on one agent, `/stop`, or `/now @Ada …` to interrupt Ada with something urgent. Approve or decline the hires the lead proposes.
 
 ## Quick start
 
@@ -50,7 +50,7 @@ Then:
 
 1. Create a group: give it a name. Symposium suggests a new folder in `~/symposium-projects`; type or **Browse…** to use another, such as a project you already have.
 2. Keep the suggested **team** (a lead, a worker, a reviewer and a scribe on the agent program found on your computer), or start empty and hire in the **Team** panel.
-3. Tell the lead what you want to build. It replies with a plan; approve it, and the work begins.
+3. Tell the lead what you want to build. It replies with a plan. Nobody starts until you click **Approve plan**.
 4. When a worker asks to run a command, such as the tests, allow or deny it in the chat.
 5. Review each diff in the chat and click **Merge** or **Discard**.
 
@@ -106,6 +106,7 @@ Agents run on your machine with your logins, so the safe choice is the default.
 - An agent runs a terminal command only if the engine allows it. By default only workers have a terminal, and each of their commands waits for you. Some commands always wait for you, whatever the mode: `git push`, deleting a branch, `sudo`, and anything that reaches outside the agent's folder.
 - These command checks read the command as text. They catch the obvious cases; they are not a sandbox. Give **Full auto** only to agents and projects you would trust with your own terminal.
 - Claude Code runs in restricted mode and Antigravity in its sandbox. If an agent still changes a file outside its folder, Symposium says so in the chat.
+- The lead's plan waits for your approval, and the engine enforces it: until you click **Approve plan**, the lead's assignments reach nobody.
 - Nothing is merged without your click. Symposium never pushes, force-pushes or deletes branches.
 - Every message, agent turn, tool call, command and its approval, hire, commit and merge is logged with who did it.
 - Symposium calls only each provider's official CLI or API, with your own login or key. It never reads or stores your tokens. For API keys, you give the _name_ of an environment variable, never the key itself.

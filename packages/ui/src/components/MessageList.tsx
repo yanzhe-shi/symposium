@@ -4,6 +4,7 @@ import { Avatar } from './Avatar.tsx';
 import { CommandCard } from './CommandCard.tsx';
 import { DiffCard } from './DiffCard.tsx';
 import { HireProposalCard } from './HireProposalCard.tsx';
+import { PlanCard } from './PlanCard.tsx';
 import { Logo } from './icons.tsx';
 import { RichText } from './RichText.tsx';
 import { RoleBadge } from './RoleBadge.tsx';
@@ -161,6 +162,9 @@ function MessageItem({
   }
   if (message.meta?.type === 'command') {
     return <CommandCard groupId={groupId} message={message} meta={message.meta} agents={agents} />;
+  }
+  if (message.meta?.type === 'plan') {
+    return <PlanCard groupId={groupId} message={message} meta={message.meta} agents={agents} />;
   }
   if (message.meta?.type === 'hire-proposal') {
     return (

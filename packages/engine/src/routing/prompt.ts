@@ -131,6 +131,15 @@ const START_NOW = `## Start right away
 
 The CEO has turned off plan approval. When you get a goal, give a short plan and assign the first tasks in the same reply. Don't wait for a go-ahead: the CEO can redirect or stop the team at any time.`;
 
+const PLAN_APPROVAL = `## Plan approval
+
+The CEO approves a plan before work starts, and Symposium enforces it. When you @mention teammates to hand out work, your message is held back and the CEO gets a card to approve or decline it.
+
+- So give the plan and the first assignments in one message. The CEO approves both with one click, and the message then reaches the teammates as you wrote it.
+- Once a plan is approved, your later hand-offs in the same conversation go straight through.
+- If the CEO declines, nothing was started. Wait for what they want changed, then send a new plan with its assignments.
+- Each plan card in the conversation shows its status: pending, approved or declined.`;
+
 export function buildSystemPrompt(input: PromptInput): string {
   const { group, agent, team, roleText, roles, access, branch, terminal } = input;
   const roster = team
@@ -175,7 +184,7 @@ export function buildSystemPrompt(input: PromptInput): string {
     ].join('\n'),
   );
   if (agent.role === 'lead') {
-    if (!group.leadAsksFirst) sections.push(START_NOW);
+    sections.push(group.leadAsksFirst ? PLAN_APPROVAL : START_NOW);
     sections.push(hireHelp(roles ?? []));
   }
   return sections.join('\n\n');
@@ -200,6 +209,9 @@ export function formatMessage(message: Message, everyone: Agent[], fullDiffs = t
       const cut = truncated || shown.length < diff.length ? '\n[diff truncated]' : '';
       body += `\n\`\`\`diff\n${shown}\n\`\`\`${cut}`;
     }
+  }
+  if (message.meta?.type === 'plan') {
+    body = `${message.body}\nPlan in message #${message.meta.replyMessageId}. Status: ${message.meta.status}`;
   }
   return `[#${message.id} · ${authorLabel(message, everyone)}]\n${body}`;
 }

@@ -107,6 +107,20 @@ export function updateMessageMeta(db: Db, id: number, meta: MessageMeta): Messag
   return getMessage(db, id);
 }
 
+/** Whether the human has approved a plan of the lead in this thread. */
+export function threadHasApprovedPlan(db: Db, groupId: string, threadId: number): boolean {
+  const row = db
+    .prepare(
+      `SELECT 1 FROM messages
+       WHERE group_id = ? AND thread_id = ?
+         AND json_extract(meta, '$.type') = 'plan'
+         AND json_extract(meta, '$.status') = 'approved'
+       LIMIT 1`,
+    )
+    .get(groupId, threadId);
+  return row !== undefined;
+}
+
 /** Messages after `afterId`, oldest first, with no page limit. For building agent context. */
 export function listMessagesSince(db: Db, groupId: string, afterId: number): Message[] {
   const rows = db

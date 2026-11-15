@@ -14,7 +14,10 @@ export interface Group {
   maxRounds: number;
   /** How many agents may work at the same time. */
   maxParallel: number;
-  /** Whether the lead proposes a plan and waits for approval before assigning work. */
+  /**
+   * Whether the lead's plan needs the human's approval before work starts. The engine enforces
+   * it: the lead's hand-offs are held until the human approves, once per thread.
+   */
   leadAsksFirst: boolean;
   createdAt: number;
 }
@@ -145,6 +148,7 @@ export type DiffStatus = 'pending' | 'merged' | 'discarded' | 'superseded';
  */
 export type CommandStatus = 'pending' | 'allowed' | 'denied' | 'expired' | 'cancelled';
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
+export type PlanStatus = 'pending' | 'approved' | 'declined';
 
 /** Structured data attached to a message. The UI renders these specially. */
 export type MessageMeta =
@@ -156,6 +160,19 @@ export type MessageMeta =
       hire: HireRequest;
       /** A role the lead wrote for this hire. Approving the hire adds the role too. */
       newRole?: RoleDraft;
+    }
+  | {
+      /**
+       * The lead wants to hand out work and the engine holds its message back until the human
+       * approves. The card's `threadId` and `round` are those of the held message.
+       */
+      type: 'plan';
+      status: PlanStatus;
+      leadId: string;
+      /** The lead's message that waits. */
+      replyMessageId: number;
+      /** The teammates that message hands work to. */
+      recipientIds: string[];
     }
   | {
       type: 'diff';

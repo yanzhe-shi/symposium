@@ -20,8 +20,8 @@ Send this without mentioning anyone, so it goes to the lead:
 
 ## What to expect
 
-1. Lea replies with a plan and asks you to approve it.
-2. You reply "Approved". Lea assigns tasks with @mentions.
+1. Lea replies with a plan and the tasks for Ada and Gio. Symposium holds the message back and shows a card under it.
+2. You click **Approve plan**. Ada and Gio get their tasks.
 3. Ada and Gio work at the same time, each in their own worktree. Their cards show what they are doing, and the **Code** tab shows their changes live. You can keep messaging anyone while they work.
 4. If a worker wants to run a command, a card asks you first. Click **Allow once**, **Always allow** or **Deny**.
 5. Their changes appear in the chat as diffs.
@@ -31,7 +31,7 @@ Send this without mentioning anyone, so it goes to the lead:
 
 If a thread stops with "Round limit reached", read where things stand and reply to carry on.
 
-To skip step 2, switch off **Lead asks before starting work** under **Settings** in the header: Lea then assigns tasks in her first reply.
+To skip step 2, switch off **Approve the lead's plan first** under **Settings** in the header: Lea's tasks then reach the workers at once.
 
 To be asked less often, click **Edit** on a worker and set **Terminal commands** to **Allow-list** with the commands you trust, such as `npm test`.
 

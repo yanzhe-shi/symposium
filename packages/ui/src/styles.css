@@ -1268,6 +1268,7 @@ input.switch:checked::after {
 /* Something is waiting for the human. */
 .diff-pending,
 .command-pending,
+.plan-pending,
 .proposal-pending {
   border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
   box-shadow:
@@ -1343,6 +1344,7 @@ input.switch:checked::after {
 .diff-discarded,
 .command-denied,
 .command-expired,
+.plan-declined,
 .command-cancelled {
   opacity: 0.65;
 }

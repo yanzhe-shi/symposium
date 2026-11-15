@@ -9,8 +9,9 @@ import {
   type CommandDecision,
   type CommandRequest,
 } from '@symposium/adapters';
-import { postMessage, postNotice } from '../chat.js';
+import { postMessage, postNotice, setMessageMeta } from '../chat.js';
 import type { AppContext } from '../context.js';
+import { badRequest, conflict } from '../errors.js';
 import { appendMemory, memoryForPrompt, readMemory } from '../memory.js';
 import { projectForPrompt, readProjectFile } from '../project-file.js';
 import type {
@@ -26,7 +27,7 @@ import { parseRoleFile, roleIdFor, validateRoleDraft } from '../roles.js';
 import { getAgent, listAgents } from '../store/agents.js';
 import { logEvent } from '../store/events.js';
 import { getGroup } from '../store/groups.js';
-import { listMessages } from '../store/messages.js';
+import { getMessage, listMessages, threadHasApprovedPlan } from '../store/messages.js';
 import { roleName, validateHire } from '../team.js';
 import { parseCommand } from './commands.js';
 import { parseMentions } from './mentions.js';
@@ -129,6 +130,13 @@ export interface RunnerOptions {
   liveChangesIntervalMs?: number;
 }
 
+/** "Ada", "Ada and Bo", "Ada, Bo and Cy". */
+function listNames(agents: Agent[]): string {
+  const names = agents.map((agent) => agent.name);
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
 /** The audit log's name for one tool call inside a turn. */
 export const AGENT_TOOL_EVENT = 'agent.tool';
 
@@ -145,6 +153,8 @@ export const DEFAULT_LIVE_CHANGES_INTERVAL_MS = 1000;
  *   the teammates who asked for it. The lead's goes to the human only.
  * - Every human message starts a thread. Each hand-off between agents in a thread is a round;
  *   past the group's round limit that thread waits for the human. Other threads carry on.
+ * - While the group asks for plan approval, the lead's first hand-off in a thread is held until
+ *   the human approves it. After that the lead hands work on freely in that thread.
  * - Work stops only when the human asks: Stop all, Stop on one agent, `/stop` or `/now`.
  * - When the whole group has been idle for a while, the scribe updates project.md.
  */
@@ -559,6 +569,28 @@ export class TeamRunner {
     const recipients = returned ? this.askersOf(author, answered, team) : mentioned;
     if (recipients.length === 0) return;
 
+    // The human approves the plan before the lead's work starts. This is the gate.
+    if (
+      author.role === 'lead' &&
+      group.leadAsksFirst &&
+      !threadHasApprovedPlan(this.ctx.db, groupId, threadId)
+    ) {
+      this.holdPlan(group, author, reply, recipients, threadId, round);
+      return;
+    }
+    this.handOn(group, reply, recipients, threadId, round, returned);
+  }
+
+  /** Puts a reply in its recipients' inboxes, one round deeper, unless the thread is at its limit. */
+  private handOn(
+    group: Group,
+    reply: Message,
+    recipients: Agent[],
+    threadId: number,
+    round: number,
+    returned: boolean,
+  ): void {
+    const groupId = group.id;
     if (round + 1 > group.maxRounds) {
       const waiting = recipients.map((agent) => agent.name).join(', ');
       postMessage(this.ctx, {
@@ -573,6 +605,94 @@ export class TeamRunner {
     for (const agent of recipients) {
       this.enqueue(groupId, agent.id, { trigger: reply, threadId, round: round + 1, returned });
     }
+  }
+
+  /** Holds the lead's hand-off back and asks the human, with a card in the chat. */
+  private holdPlan(
+    group: Group,
+    lead: Agent,
+    reply: Message,
+    recipients: Agent[],
+    threadId: number,
+    round: number,
+  ): void {
+    const recipientIds = recipients.map((agent) => agent.id);
+    postMessage(this.ctx, {
+      groupId: group.id,
+      authorKind: 'system',
+      body: `${lead.name} wants to hand work to ${listNames(recipients)}. Nothing starts until you approve the plan.`,
+      meta: {
+        type: 'plan',
+        status: 'pending',
+        leadId: lead.id,
+        replyMessageId: reply.id,
+        recipientIds,
+      },
+      threadId,
+      round,
+    });
+    logEvent(this.ctx.db, {
+      groupId: group.id,
+      agentId: lead.id,
+      kind: 'plan.held',
+      detail: { replyMessageId: reply.id, threadId, recipientIds },
+    });
+  }
+
+  /**
+   * The human's answer to a plan card. Approving hands the lead's held message to the teammates
+   * it names and opens its thread for the lead's later hand-offs. Declining drops the hand-off:
+   * the human says what to change, and the lead's next plan gets a card of its own.
+   */
+  decidePlan(group: Group, card: Message, approve: boolean): Message {
+    const meta = card.meta;
+    if (meta?.type !== 'plan') throw badRequest('That message is not a plan');
+    if (meta.status !== 'pending') throw conflict(`This plan was already ${meta.status}`);
+    const lead = getAgent(this.ctx.db, meta.leadId);
+    const leadName = lead?.name ?? 'the lead';
+    const detail = { cardMessageId: card.id, replyMessageId: meta.replyMessageId };
+
+    if (!approve) {
+      logEvent(this.ctx.db, {
+        groupId: group.id,
+        agentId: meta.leadId,
+        kind: 'plan.declined',
+        detail,
+      });
+      postNotice(
+        this.ctx,
+        group.id,
+        `You declined the plan. Nothing was started. Tell ${leadName} what to change.`,
+      );
+      return setMessageMeta(this.ctx, card, { ...meta, status: 'declined' });
+    }
+
+    const reply = getMessage(this.ctx.db, meta.replyMessageId);
+    if (!reply || card.threadId === null) throw conflict('The message this plan held is gone.');
+    const team = listAgents(this.ctx.db, group.id);
+    const recipients = team.filter(
+      (agent) => agent.role !== 'scribe' && meta.recipientIds.includes(agent.id),
+    );
+    const updated = setMessageMeta(this.ctx, card, { ...meta, status: 'approved' });
+    logEvent(this.ctx.db, {
+      groupId: group.id,
+      agentId: meta.leadId,
+      kind: 'plan.approved',
+      detail,
+    });
+    const gone = meta.recipientIds.length - recipients.length;
+    if (gone > 0) {
+      postNotice(
+        this.ctx,
+        group.id,
+        `${gone === 1 ? 'One teammate' : `${gone} teammates`} named in the plan ${gone === 1 ? 'is' : 'are'} no longer on the team and ${gone === 1 ? 'was' : 'were'} not asked.`,
+        'warning',
+      );
+    }
+    if (recipients.length > 0) {
+      this.handOn(group, reply, recipients, card.threadId, card.round ?? 0, false);
+    }
+    return updated;
   }
 
   /**

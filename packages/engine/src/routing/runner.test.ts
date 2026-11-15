@@ -18,6 +18,9 @@ beforeEach(async () => {
       payload: { name: 'Shop', folderPath: join(t.workDir, 'shop') },
     })
   ).json();
+  // Most tests here are about who gets which message. The plan gate, which holds the lead's
+  // hand-offs for the human, is on by default and has its own tests below.
+  await setGroup({ leadAsksFirst: false });
 });
 afterEach(async () => {
   await t.close();
@@ -267,6 +270,7 @@ describe('routing', () => {
   });
 
   it('tells the lead to start at once when plan approval is switched off', async () => {
+    await setGroup({ leadAsksFirst: true });
     await hire('Lea', 'lead', [{ text: 'ok' }]);
     await say('Build a shop');
     await settle();
@@ -277,12 +281,144 @@ describe('routing', () => {
     const [asking, starting] = t.mocks.get('Lea')!.calls;
     // The built-in lead role keeps its approval line in one list with the others.
     expect(asking!.systemPrompt).toMatch(
-      /## How you work\n\n- When the CEO gives you a new goal.*ask the CEO to approve it.*\n- Assign work/,
+      /## How you work\n\n- When the CEO gives you a new goal.*until the CEO approves the plan.*\n- Assign work/,
     );
     expect(asking!.systemPrompt).not.toContain('ask-first');
+    expect(asking!.systemPrompt).toContain('## Plan approval');
+    expect(asking!.systemPrompt).not.toContain('Start right away');
     expect(starting!.systemPrompt).toContain('## How you work\n\n- Assign work');
-    expect(starting!.systemPrompt).not.toContain('ask the CEO to approve it');
+    expect(starting!.systemPrompt).not.toContain('until the CEO approves the plan');
+    expect(starting!.systemPrompt).not.toContain('## Plan approval');
     expect(starting!.systemPrompt).toContain('Start right away');
+  });
+});
+
+describe('plan approval', () => {
+  beforeEach(async () => {
+    await setGroup({ leadAsksFirst: true });
+  });
+
+  async function planCards(): Promise<Message[]> {
+    return (await chat()).filter((message) => message.meta?.type === 'plan');
+  }
+
+  function decide(card: Message, decision: 'approve-plan' | 'decline-plan') {
+    return t.request({
+      method: 'POST',
+      url: `/api/groups/${group.id}/messages/${card.id}/${decision}`,
+    });
+  }
+
+  it("holds the lead's hand-off until the human approves the plan", async () => {
+    await hire('Lea', 'lead', [
+      { text: 'Plan: a cart. @Ada build the cart' },
+      { text: '@Ada now add tests' },
+      { text: 'Ready to merge.' },
+    ]);
+    const ada = await hire('Ada', 'worker', [{ text: 'Built it.' }, { text: 'Tested.' }]);
+    await say('Build a shop');
+    await settle();
+
+    // Lea has spoken, but Ada was not started: the engine holds the message, not the model.
+    expect(await transcript()).toEqual([
+      'CEO: Build a shop',
+      'Lea: Plan: a cart. @Ada build the cart',
+      'system: Lea wants to hand work to Ada. Nothing starts until you approve the plan.',
+    ]);
+    expect(t.mocks.get('Ada')?.calls ?? []).toHaveLength(0);
+    expect((await status()).running).toBe(false);
+    const [card] = await planCards();
+    expect(card!.meta).toMatchObject({ status: 'pending', recipientIds: [ada.id] });
+
+    const res = await decide(card!, 'approve-plan');
+    expect(res.statusCode).toBe(200);
+    expect(res.json().meta.status).toBe('approved');
+    await settle();
+
+    // The held message reaches Ada as Lea wrote it. Lea's later hand-off in the same thread
+    // goes straight through: one approval covers the thread.
+    expect(t.mocks.get('Ada')!.calls[0]!.trigger).toBe('Plan: a cart. @Ada build the cart');
+    expect((await transcript()).slice(3)).toEqual([
+      'Ada: Built it.',
+      'Lea: @Ada now add tests',
+      'Ada: Tested.',
+      'Lea: Ready to merge.',
+    ]);
+    expect(await planCards()).toHaveLength(1);
+    const kinds = listEvents(t.db, group.id).map((event) => event.kind);
+    expect(kinds).toContain('plan.held');
+    expect(kinds).toContain('plan.approved');
+  });
+
+  it('starts nothing when the human declines, and asks again for the next plan', async () => {
+    await hire('Lea', 'lead', [{ text: '@Ada build the cart' }, { text: '@Ada build a basket' }]);
+    await hire('Ada', 'worker', [{ text: 'Built it.' }]);
+    await say('Build a shop');
+    await settle();
+    const [first] = await planCards();
+
+    expect((await decide(first!, 'decline-plan')).json().meta.status).toBe('declined');
+    await settle();
+    expect(t.mocks.get('Ada')?.calls ?? []).toHaveLength(0);
+    expect((await transcript()).at(-1)).toBe(
+      'system: You declined the plan. Nothing was started. Tell Lea what to change.',
+    );
+    // A decision is final.
+    expect((await decide(first!, 'approve-plan')).statusCode).toBe(409);
+
+    await say('Call it a basket');
+    await settle();
+    // Lea is told how her first plan fared, and her new one waits for its own approval.
+    expect(t.mocks.get('Lea')!.calls[1]!.prompt).toContain(
+      `Plan in message #${first!.id - 1}. Status: declined`,
+    );
+    const cards = await planCards();
+    expect(cards.map((card) => card.meta)).toMatchObject([
+      { status: 'declined' },
+      { status: 'pending' },
+    ]);
+    expect(t.mocks.get('Ada')?.calls ?? []).toHaveLength(0);
+
+    await decide(cards[1]!, 'approve-plan');
+    await settle();
+    expect(t.mocks.get('Ada')!.calls[0]!.trigger).toBe('@Ada build a basket');
+  });
+
+  it('does not hold what the human asks a teammate directly', async () => {
+    await hire('Lea', 'lead', [{ text: 'Should not speak' }]);
+    await hire('Ada', 'worker', [{ text: 'Built it.' }]);
+    await say('@Ada build the cart');
+    await settle();
+    expect(await transcript()).toEqual(['CEO: @Ada build the cart', 'Ada: Built it.']);
+  });
+
+  it('leaves out a teammate who left before the plan was approved', async () => {
+    await hire('Lea', 'lead', [
+      { text: '@Ada build the cart. @Bob build checkout.' },
+      { text: 'Ready to merge.' },
+    ]);
+    const ada = await hire('Ada', 'worker', [{ text: 'Built it.' }]);
+    await hire('Bob', 'worker', [{ text: 'Checkout done.' }]);
+    await say('Build a shop');
+    await settle();
+    await t.request({ method: 'DELETE', url: `/api/groups/${group.id}/agents/${ada.id}` });
+
+    const [card] = await planCards();
+    expect((await decide(card!, 'approve-plan')).statusCode).toBe(200);
+    await settle();
+    expect(t.mocks.get('Ada')?.calls ?? []).toHaveLength(0);
+    expect(t.mocks.get('Bob')!.calls).toHaveLength(1);
+    expect(await transcript()).toContain(
+      'system: One teammate named in the plan is no longer on the team and was not asked.',
+    );
+  });
+
+  it('refuses a plan decision on a message that is not a plan', async () => {
+    await hire('Lea', 'lead', [{ text: 'On it.' }]);
+    await say('Build a shop');
+    await settle();
+    const reply = (await chat()).at(-1)!;
+    expect((await decide(reply, 'approve-plan')).statusCode).toBe(400);
   });
 });
 

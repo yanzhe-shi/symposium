@@ -88,8 +88,8 @@ export function registerRunRoutes(
     },
   );
 
-  // Decisions only the human can make: approving hires the lead proposed, merging or
-  // discarding a worker's changes, and letting an agent run a terminal command.
+  // Decisions only the human can make: approving the lead's plan and the hires it proposed,
+  // merging or discarding a worker's changes, and letting an agent run a terminal command.
   app.post<{ Params: { groupId: string; messageId: number; decision: string } }>(
     '/api/groups/:groupId/messages/:messageId/:decision',
     {
@@ -104,6 +104,8 @@ export function registerRunRoutes(
               enum: [
                 'approve-hire',
                 'reject-hire',
+                'approve-plan',
+                'decline-plan',
                 'merge',
                 'discard',
                 ...Object.keys(COMMAND_CHOICES),
@@ -118,6 +120,10 @@ export function registerRunRoutes(
       const message = requireMessage(ctx, group.id, request.params.messageId);
       if (request.params.decision === 'merge') return mergeDiff(ctx, group, message);
       if (request.params.decision === 'discard') return discardDiff(ctx, group, message);
+      if (request.params.decision === 'approve-plan')
+        return runner.decidePlan(group, message, true);
+      if (request.params.decision === 'decline-plan')
+        return runner.decidePlan(group, message, false);
       const commandChoice = COMMAND_CHOICES[request.params.decision];
       if (commandChoice) return approvals.resolve(group, message, commandChoice);
 

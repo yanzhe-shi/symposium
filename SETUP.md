@@ -125,8 +125,8 @@ The first screen shows what Symposium found on your computer: git, the agent pro
 1. **Create a group.** Give it a name. Symposium suggests a new folder named after it in `~/symposium-projects`. To use another folder, such as a project you already have, type its absolute path or click **Browse…**. If the folder doesn't exist, Symposium creates it. If it isn't a git repo, Symposium runs `git init` and makes a first commit of the folder's contents. It also adds a `project.md`.
 2. **Choose a team.** By default the group starts with a lead (Lea), a worker (Ada), a reviewer (Rex) and a scribe (Sam) on the first agent program found. Pick another provider, or **No team yet** to hire everyone yourself.
 3. **Hire more, or change anyone.** In the Team panel click **Hire an agent**, name it (the name is how you @mention it), choose a role, a provider and a model. **Edit** on a card changes an agent later.
-4. **Tell the lead your goal.** It replies with a plan and asks for approval. It may also propose hires; click **Hire** on the ones you want.
-5. **Approve the plan.** The lead assigns tasks by @mentioning workers, who work at the same time. Each card in the Team panel shows Working, Idle or how many messages are queued.
+4. **Tell the lead your goal.** It replies with a plan and the tasks it wants to hand out. It may also propose hires; click **Hire** on the ones you want.
+5. **Approve the plan.** Symposium holds the lead's message back and shows a card under it: **Approve plan** or **Decline**. Nobody starts before you approve. To change the plan, decline and say what you want instead. Once approved, the workers get their tasks and work at the same time. Each card in the Team panel shows Working, Idle or how many messages are queued.
 6. **Answer command requests.** When a worker wants to run a command, a card in the chat shows the command and the folder. Click **Allow once**, **Always allow** (the command joins that worker's allow-list) or **Deny**. Only that worker waits for you.
 7. **Review diffs.** After a worker's turn, its changes appear in the chat as a diff. Click **Show diff**, then **Merge into main** or **Discard**.
 
@@ -144,7 +144,7 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **`/now @Ada …`** interrupts Ada's current turn and restarts her on that message.
 - **Round limit** (**Settings** in the header): how many hand-offs between agents are allowed in one thread before it waits for you. Every message you send starts a new thread. Default 6.
 - **Agents at once** (**Settings**): how many agents may work at the same time. Default 3.
-- **Lead asks before starting work** (**Settings**): on by default. Switch it off and the lead assigns tasks straight away instead of waiting for you to approve a plan.
+- **Approve the lead's plan first** (**Settings**): on by default. Symposium, not the lead, enforces it: whenever the lead hands out work for a new message of yours, the hand-off waits for your **Approve plan**. One approval covers everything that follows from that message. What you ask a teammate directly with @name is never held. Switch it off and the lead assigns tasks straight away.
 - **project.md updates** happen once the whole team has been idle for 30 seconds, not after every reply.
 - **Edit** an agent from its card to change its model, role, effort, file access or terminal without firing it. The change applies from its next turn. Giving a lead or reviewer **Edit** file access gives it its own branch and worktree, like a worker.
 - **Roles** (Team panel): read and rewrite the job description of any role, including the built-in lead, worker, reviewer and scribe, or add your own. A new role "works like" one of those four, which sets what Symposium lets its agents do. An edit applies from each agent's next turn, in every group. **Reset to built-in** undoes your changes to a built-in role.

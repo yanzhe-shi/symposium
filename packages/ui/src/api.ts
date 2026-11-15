@@ -103,6 +103,8 @@ export const api = {
     decision:
       | 'approve-hire'
       | 'reject-hire'
+      | 'approve-plan'
+      | 'decline-plan'
       | 'merge'
       | 'discard'
       | 'allow-command'

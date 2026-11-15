@@ -131,10 +131,10 @@ function GroupSettings({
           </label>
           <label className="setting-row">
             <span>
-              Lead asks before starting work
+              Approve the lead's plan first
               <small>
-                On: the lead proposes a plan and waits for your approval. Off: it starts assigning
-                tasks right away.
+                On: Symposium holds the lead's assignments until you approve the plan. Off: the lead
+                starts assigning tasks right away.
               </small>
             </span>
             <input
