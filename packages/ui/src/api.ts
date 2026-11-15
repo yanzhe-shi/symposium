@@ -7,6 +7,7 @@ import type {
   FolderChoices,
   FolderListing,
   Group,
+  GroupUsage,
   HireRequest,
   Message,
   ModelList,
@@ -135,6 +136,7 @@ export const api = {
   stopCommand: (groupId: string, runId: string) =>
     send<{ stopped: boolean }>('POST', `${groupUrl(groupId)}/terminal/${runId}/stop`),
 
+  usage: (groupId: string) => request<GroupUsage>(`${groupUrl(groupId)}/usage`),
   project: (groupId: string) => request<{ content: string }>(`${groupUrl(groupId)}/project`),
   saveProject: (groupId: string, content: string) =>
     send<{ content: string }>('PUT', `${groupUrl(groupId)}/project`, { content }),

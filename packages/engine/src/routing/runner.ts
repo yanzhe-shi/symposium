@@ -1062,7 +1062,7 @@ export class TeamRunner {
         groupId: group.id,
         agentId: agent.id,
         kind: 'agent.turn_failed',
-        detail: { reason, durationMs: Date.now() - started },
+        detail: { reason, threadId, durationMs: Date.now() - started },
       });
       return undefined;
     } finally {

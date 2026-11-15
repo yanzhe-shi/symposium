@@ -1,3 +1,4 @@
+import { groupUsage } from '../usage.js';
 import type { FastifyInstance } from 'fastify';
 import { postNotice, setMessageMeta } from '../chat.js';
 import type { CommandApprovals, CommandChoice } from '../commands/approvals.js';
@@ -32,6 +33,12 @@ export function registerRunRoutes(
   approvals: CommandApprovals,
   terminal: HumanTerminal,
 ): void {
+  // What the group's work has taken so far, per agent and per task.
+  app.get<{ Params: { groupId: string } }>('/api/groups/:groupId/usage', async (request) => {
+    const group = requireGroup(ctx, request.params.groupId);
+    return groupUsage(ctx.db, group.id);
+  });
+
   // The human's own terminal: a command they type in the Code tab, run in the project folder
   // or in an agent's worktree. Its output arrives over the WebSocket.
   app.post<{ Params: { groupId: string }; Body: RunCommandRequest }>(

@@ -1802,6 +1802,55 @@ input.switch:checked::after {
   margin-bottom: 0.5rem;
 }
 
+.usage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.usage-panel p {
+  margin: 0;
+}
+
+.usage-heading {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+}
+
+.usage-table {
+  width: 100%;
+  font-size: 0.82rem;
+  border-collapse: collapse;
+}
+
+.usage-table th,
+.usage-table td {
+  padding: 0.35rem 0.4rem;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.usage-table thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.usage-table th[scope='row'] {
+  max-width: 9rem;
+  overflow: hidden;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+.usage-table tfoot th,
+.usage-table tfoot td {
+  font-weight: 700;
+  border-bottom: none;
+}
+
 .project-panel {
   display: flex;
   flex-direction: column;

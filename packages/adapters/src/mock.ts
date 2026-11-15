@@ -25,6 +25,8 @@ export interface MockReply {
   delayMs?: number;
   /** Fail the turn with this message instead of replying. */
   error?: string;
+  /** What the turn cost, as a provider that reports prices would say. */
+  costUsd?: number;
 }
 
 export type MockResponder = (task: AgentTask, callIndex: number) => MockReply | Promise<MockReply>;
@@ -86,7 +88,11 @@ export class MockAdapter implements AgentAdapter {
         await writeFile(target, content);
       }
     }
-    return { text: reply.text, changedFiles: Object.keys(reply.files ?? {}).sort() };
+    return {
+      text: reply.text,
+      changedFiles: Object.keys(reply.files ?? {}).sort(),
+      ...(reply.costUsd === undefined ? {} : { costUsd: reply.costUsd }),
+    };
   }
 
   private async runCommand(task: AgentTask, command: string): Promise<void> {

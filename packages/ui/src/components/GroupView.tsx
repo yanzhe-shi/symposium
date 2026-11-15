@@ -27,6 +27,7 @@ import { BranchIcon, CodeIcon, SlidersIcon, StopIcon } from './icons.tsx';
 import { MessageList } from './MessageList.tsx';
 import { ProjectPanel } from './ProjectPanel.tsx';
 import { TeamPanel } from './TeamPanel.tsx';
+import { UsagePanel } from './UsagePanel.tsx';
 
 const STATUS_LABELS = { connecting: 'Connecting…', open: 'Live', closed: 'Reconnecting…' };
 const ROUND_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10];
@@ -222,7 +223,7 @@ export function GroupView({ group, catalog, onGroupChanged, onGroupDeleted }: Gr
     onGroupChanged,
     onGroupDeleted,
   );
-  const [panel, setPanel] = useState<'team' | 'project' | 'code'>('team');
+  const [panel, setPanel] = useState<'team' | 'project' | 'code' | 'costs'>('team');
   const [code, setCode] = useState<{ where: CodeLocation; view: CodeView }>({
     where: 'project',
     view: 'files',
@@ -463,6 +464,15 @@ export function GroupView({ group, catalog, onGroupChanged, onGroupDeleted }: Gr
             >
               Code
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panel === 'costs'}
+              className={panel === 'costs' ? 'tab tab-active' : 'tab'}
+              onClick={() => setPanel('costs')}
+            >
+              Costs
+            </button>
           </div>
           {panel === 'team' && (
             <TeamPanel
@@ -481,6 +491,10 @@ export function GroupView({ group, catalog, onGroupChanged, onGroupDeleted }: Gr
             />
           )}
           {panel === 'project' && <ProjectPanel group={group} version={state.projectVersion} />}
+          {panel === 'costs' && (
+            // Every turn ends with a message, so a new message is when the sums may have moved.
+            <UsagePanel group={group} agents={state.agents} version={state.messages.length} />
+          )}
           {panel === 'code' && (
             <CodePanel
               group={group}

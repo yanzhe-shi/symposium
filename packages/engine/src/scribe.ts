@@ -60,6 +60,7 @@ export async function updateProjectFile(
 
   ctx.hub.broadcast(group.id, { type: 'agent.activity', agentId: scribe.id, activity: 'working' });
   try {
+    const started = Date.now();
     const result = await ctx.createAdapter(scribe).run({
       agentName: scribe.name,
       model: scribe.model,
@@ -84,7 +85,12 @@ export async function updateProjectFile(
       groupId: group.id,
       agentId: scribe.id,
       kind: 'project.updated',
-      detail: { throughMessageId: lastId, costUsd: result.costUsd, chars: content.length },
+      detail: {
+        throughMessageId: lastId,
+        costUsd: result.costUsd,
+        chars: content.length,
+        durationMs: Date.now() - started,
+      },
     });
     ctx.hub.broadcast(group.id, { type: 'project.updated' });
     postNotice(ctx, group.id, `${scribe.name} updated project.md.`);

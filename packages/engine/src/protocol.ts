@@ -335,6 +335,39 @@ export interface FileContent {
   skipped?: 'binary' | 'too-large';
 }
 
+/** What some work took: one agent's, one task's or the whole group's. */
+export interface UsageTotals {
+  /** Turns started, the failed ones included. */
+  turns: number;
+  failedTurns: number;
+  /** Time agents spent on those turns. */
+  durationMs: number;
+  /** The sum of what providers reported for those turns. Null when none of them reported a cost. */
+  costUsd: number | null;
+  /** How many of the turns came with a cost. */
+  pricedTurns: number;
+}
+
+export interface AgentUsage extends UsageTotals {
+  agentId: string;
+}
+
+/** A task: one message of the human and everything the team did because of it. */
+export interface ThreadUsage extends UsageTotals {
+  threadId: number;
+  /** The first line of the human's message. */
+  title: string;
+  agentIds: string[];
+}
+
+/** Answer of `GET /api/groups/:id/usage`. */
+export interface GroupUsage {
+  total: UsageTotals;
+  agents: AgentUsage[];
+  /** Newest first. */
+  threads: ThreadUsage[];
+}
+
 /** Events the engine pushes to the UI over the WebSocket, per group. */
 export type ServerEvent =
   | { type: 'message.created'; message: Message }
