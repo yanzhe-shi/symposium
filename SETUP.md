@@ -164,6 +164,7 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **Memory**: read or edit what each agent has chosen to remember.
 - **Resize the side panel** by dragging the line between it and the chat. Double-click the line to reset it. The Code tab remembers its own width.
 - **Rename or delete a group** under **Settings** in the header. Deleting removes the chat, the team, their memory and their worktrees. Your project folder stays, and so do its git branches, so unmerged work is still on `symposium/<name>`.
+- **Notifications.** The bell at the bottom of the sidebar switches them on; your browser asks for its permission once. While Symposium is in the background you are then told when a plan, a command or a hire waits for your decision, and when the team has stopped working. The tab's title also shows how many cards wait, as in `(2) Symposium`. This covers the group that is open in the page.
 - **Light and dark.** Symposium follows your system's setting. The round button at the bottom of the sidebar switches between system, light and dark.
 
 ## Where your data is

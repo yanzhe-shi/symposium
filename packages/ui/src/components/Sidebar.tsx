@@ -2,7 +2,16 @@ import type { Group } from '@symposium/engine/protocol';
 import { useState } from 'react';
 import { applyTheme, loadTheme, nextTheme, THEME_LABELS, type Theme } from '../theme.ts';
 import { Avatar } from './Avatar.tsx';
-import { AutoThemeIcon, Logo, MoonIcon, PlusIcon, SunIcon } from './icons.tsx';
+import { notifyState, toggleNotify, type NotifyState } from '../notify.ts';
+import {
+  AutoThemeIcon,
+  BellIcon,
+  BellOffIcon,
+  Logo,
+  MoonIcon,
+  PlusIcon,
+  SunIcon,
+} from './icons.tsx';
 
 interface SidebarProps {
   groups: Group[];
@@ -17,8 +26,18 @@ const THEME_ICONS: Record<Theme, () => React.JSX.Element> = {
   dark: MoonIcon,
 };
 
+const NOTIFY_LABELS: Record<NotifyState, string> = {
+  on: 'Notifications are on: you are told when a plan, a command or a hire waits for you, and when the team stops, while this page is in the background. Click to switch off.',
+  off: 'Notifications are off. Click to be told when something waits for you while this page is in the background.',
+  blocked:
+    'Your browser blocks notifications for this page. Allow them in the site settings next to the address, then click here.',
+  unsupported: '',
+};
+
 export function Sidebar({ groups, selectedId, onSelect, onNew }: SidebarProps) {
   const [theme, setTheme] = useState(loadTheme);
+  const [notifying, setNotifying] = useState(notifyState);
+  const NotifyIcon = notifying === 'on' ? BellIcon : BellOffIcon;
   const ThemeIcon = THEME_ICONS[theme];
 
   function cycleTheme(): void {
@@ -65,6 +84,18 @@ export function Sidebar({ groups, selectedId, onSelect, onNew }: SidebarProps) {
         <button type="button" className="button-secondary sidebar-new" onClick={onNew}>
           <PlusIcon /> New group
         </button>
+        {notifying !== 'unsupported' && (
+          <button
+            type="button"
+            className="icon-button"
+            title={NOTIFY_LABELS[notifying]}
+            aria-label={NOTIFY_LABELS[notifying]}
+            aria-pressed={notifying === 'on'}
+            onClick={() => void toggleNotify().then(setNotifying)}
+          >
+            <NotifyIcon />
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"

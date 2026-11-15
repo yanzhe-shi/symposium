@@ -19,6 +19,7 @@ import {
   type SideLayout,
 } from '../side-width.ts';
 import { shortPath } from '../text-format.ts';
+import { useWaitingSignals } from '../use-notify.ts';
 import { useGroup } from '../use-group.ts';
 import { Avatar } from './Avatar.tsx';
 import { CodePanel, type CodeView } from './CodePanel.tsx';
@@ -223,6 +224,7 @@ export function GroupView({ group, catalog, onGroupChanged, onGroupDeleted }: Gr
     onGroupChanged,
     onGroupDeleted,
   );
+  useWaitingSignals(group, state);
   const [panel, setPanel] = useState<'team' | 'project' | 'code' | 'costs'>('team');
   const [code, setCode] = useState<{ where: CodeLocation; view: CodeView }>({
     where: 'project',

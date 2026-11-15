@@ -24,6 +24,7 @@ Each group chat is one project folder. You add agents from any provider (Claude 
 - **A terminal and VS Code for you.** Run your own commands in the project or a worktree from the Code tab, and open the project with every worktree side by side in VS Code.
 - **Memory that stays with the agent.** Each agent keeps its own memory file, and every agent reads `project.md` before working. Both belong to Symposium, not to the provider.
 - **Teams you can take along.** Save a team with its settings, and its memory if you like, and hire it into your next project in one step. Or send one agent to another group with what it remembers.
+- **It tells you when it needs you.** Switch on notifications and leave the tab: you hear when a plan, a command or a hire waits for you, and when the team has stopped.
 - **You stay in charge.** Work starts only when you approve the lead's plan, and stops only when you say so: **Stop all**, **Stop** on one agent, `/stop`, or `/now @Ada …` to interrupt Ada with something urgent. Approve or decline the hires the lead proposes.
 
 ## Quick start
