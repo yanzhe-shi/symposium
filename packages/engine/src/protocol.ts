@@ -151,6 +151,63 @@ export interface HireRequest {
 /** Changes to an agent on the team. The name stays: branches and mentions depend on it. */
 export type UpdateAgentRequest = Partial<Omit<HireRequest, 'name'>>;
 
+/** One member of a saved team, as the lists show it. */
+export interface SavedTeamMember {
+  name: string;
+  provider: ProviderId;
+  model: string;
+  role: RoleKind;
+  roleId: string;
+  /** Whether what this agent remembers was saved with the team. */
+  hasMemory: boolean;
+}
+
+/**
+ * A team the human saved to hire again in another group: who is on it, and how each one is set
+ * up. Kept as one file per team in Symposium's data folder.
+ */
+export interface SavedTeam {
+  id: string;
+  name: string;
+  savedAt: number;
+  members: SavedTeamMember[];
+}
+
+/** Body of `POST /api/groups/:id/save-team`: saves the group's current team under a name. */
+export interface SaveTeamRequest {
+  name: string;
+  /** Also save what each agent remembers. Off unless asked for. */
+  withMemory?: boolean;
+  /** Write over a saved team of the same name. Without it that is a conflict. */
+  replace?: boolean;
+}
+
+/** Body of `POST /api/groups/:id/hire-team`. */
+export interface HireTeamRequest {
+  teamId: string;
+}
+
+/** Answer of `POST /api/groups/:id/hire-team`. */
+export interface HireTeamResult {
+  hired: Agent[];
+  /** Members that could not be hired, each with the reason: "Lea: Lea is already on the team". */
+  skipped: string[];
+}
+
+/**
+ * Body of `POST /api/groups/:id/agents/:agentId/send`: hires a copy of the agent into another
+ * group. The agent stays in this group too unless `leave` is set.
+ */
+export interface SendAgentRequest {
+  toGroupId: string;
+  /** Take what the agent remembers along. On unless switched off. */
+  withMemory?: boolean;
+  /** Fire the agent here once it has arrived there. */
+  leave?: boolean;
+  /** Another name in the other group, when theirs is taken there. */
+  name?: string;
+}
+
 export type DiffStatus = 'pending' | 'merged' | 'discarded' | 'superseded';
 /**
  * What became of a command an agent asked to run. `expired`: nobody answered in time.
@@ -452,6 +509,8 @@ export interface CreateGroupRequest {
    * scribe. Left out, the group starts empty.
    */
   starterTeam?: ProviderId;
+  /** Hire this saved team right away, by its id. Not together with `starterTeam`. */
+  team?: string;
 }
 
 export interface UpdateGroupRequest {

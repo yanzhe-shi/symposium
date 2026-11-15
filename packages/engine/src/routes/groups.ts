@@ -2,7 +2,7 @@ import { MAX_CHECK_COMMAND_LENGTH } from '../checks.js';
 import type { FastifyInstance } from 'fastify';
 import type { HumanTerminal } from '../commands/terminal.js';
 import type { AppContext } from '../context.js';
-import { notFound } from '../errors.js';
+import { badRequest, notFound } from '../errors.js';
 import { postNotice } from '../chat.js';
 import { prepareRepository } from '../git/repository.js';
 import { prepareProjectFolder } from '../project-folder.js';
@@ -12,6 +12,7 @@ import { listAgents } from '../store/agents.js';
 import { createGroup, deleteGroup, getGroup, listGroups, updateGroup } from '../store/groups.js';
 import { STARTER_PROVIDERS, starterTeam } from '../system.js';
 import { hire } from '../team.js';
+import { hireSavedTeam, listSavedTeams } from '../teams.js';
 import { removeGroupFiles } from '../workflow.js';
 
 export const MAX_ROUNDS_LIMIT = 10;
@@ -47,6 +48,7 @@ export function registerGroupRoutes(
             name: { type: 'string', minLength: 1, maxLength: 80 },
             folderPath: { type: 'string', minLength: 1, maxLength: 1000 },
             starterTeam: { type: 'string', enum: [...STARTER_PROVIDERS] },
+            team: { type: 'string', maxLength: 60 },
           },
           additionalProperties: false,
         },
@@ -54,6 +56,12 @@ export function registerGroupRoutes(
     },
     async (request, reply) => {
       const name = request.body.name.trim();
+      const { starterTeam: starter, team: savedTeam } = request.body;
+      if (starter && savedTeam) throw badRequest('Choose a starter team or a saved team, not both');
+      // Checked before anything is created, so a wrong team leaves no half-made group behind.
+      if (savedTeam && !listSavedTeams(ctx).some((team) => team.id === savedTeam)) {
+        throw notFound('Saved team not found');
+      }
       const folderPath = await prepareProjectFolder(request.body.folderPath, ctx.dataDir);
       const { baseBranch, actions } = await prepareRepository(folderPath, name);
       const group = createGroup(ctx.db, { name, folderPath, baseBranch });
@@ -64,9 +72,10 @@ export function registerGroupRoutes(
         `Project folder: ${folderPath} (branch ${baseBranch}).${done} Workers get their own branch and worktree; nothing is merged without your approval.`,
       );
       // The human asked for a team with the group, which is their approval of these hires.
-      if (request.body.starterTeam) {
-        for (const member of starterTeam(request.body.starterTeam)) hire(ctx, group, member);
+      if (starter) {
+        for (const member of starterTeam(starter)) hire(ctx, group, member);
       }
+      if (savedTeam) await hireSavedTeam(ctx, group, savedTeam);
       return reply.code(201).send(group);
     },
   );

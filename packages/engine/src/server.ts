@@ -22,6 +22,7 @@ import { registerGroupRoutes } from './routes/groups.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMessageRoutes } from './routes/messages.js';
 import { registerRoleRoutes } from './routes/roles.js';
+import { registerTeamRoutes } from './routes/teams.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { TeamRunner } from './routing/runner.js';
 import { createRunnerHooks } from './workflow.js';
@@ -101,6 +102,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerGroupRoutes(app, ctx, runner, terminal);
   registerAgentRoutes(app, ctx, runner);
   registerRoleRoutes(app, ctx);
+  registerTeamRoutes(app, ctx, runner);
   registerMessageRoutes(app, ctx, runner);
   registerRunRoutes(app, ctx, runner, approvals, terminal);
   registerDocumentRoutes(app, ctx);
