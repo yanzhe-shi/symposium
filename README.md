@@ -25,16 +25,26 @@ Each group chat is one project folder. You add agents from any provider (Claude 
 
 ## Quick start
 
-You need Node.js 22 or newer and git. For real work you also need at least one agent provider: the `claude` CLI, the `agy` CLI, or an OpenAI-compatible API (Ollama works). Without one you can still look around with the **Mock** provider.
+You need git. For real work you also need at least one agent provider: the `claude` CLI, the `agy` CLI, or an OpenAI-compatible API (Ollama works). Without one you can still look around with the **Mock** provider.
 
-On Linux, macOS or Windows with WSL, from this folder:
+Install Symposium the way that fits your computer:
+
+| Your computer                     | Install with                                                                                          |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Fedora, RHEL, openSUSE            | the `.rpm` package: `sudo dnf install ./symposium-<version>-1.x86_64.rpm`                             |
+| Debian, Ubuntu                    | the `.deb` package: `sudo apt install ./symposium_<version>_amd64.deb`                                |
+| Windows                           | [WSL](https://learn.microsoft.com/windows/wsl/install) with Ubuntu, then the `.deb` package inside it |
+| macOS, ARM computers, other Linux | from this folder: `scripts/install.sh` (needs Node.js 22 or newer)                                    |
+
+The packages bring their own Node.js, so nothing else has to be installed first. If you are not sure which one is yours, put `install.sh` next to the packages and run `sh install.sh`: it says which package fits and installs it. `scripts/package.sh` builds both packages and that script into `dist/packages`.
+
+Then start it:
 
 ```sh
-scripts/install.sh
 symposium
 ```
 
-The first command fetches the packages, builds the chat page and adds a `symposium` command (on Linux also an entry in your applications menu). The second starts Symposium and opens it in your browser at <http://localhost:4400>. Everything runs on your own machine. `symposium stop` stops it.
+Symposium opens in your browser at <http://localhost:4400>, and it is in your applications menu too. Everything runs on your own machine. `symposium stop` stops it.
 
 Then:
 

@@ -2,14 +2,53 @@
 
 This guide gets Symposium running on your machine and walks you through a first project.
 
-## 1. Install the basics
+## 1. Install Symposium
 
-| Tool    | Version       | Check with       |
-| ------- | ------------- | ---------------- |
-| Node.js | 22 or newer   | `node --version` |
-| git     | 2.28 or newer | `git --version`  |
+Pick the row for your computer. You need git 2.28 or newer in every case (`git --version`).
 
-Then, from the Symposium folder:
+| Your computer                     | Install with                                       |
+| --------------------------------- | -------------------------------------------------- |
+| Fedora, RHEL, openSUSE            | the `.rpm` package                                 |
+| Debian, Ubuntu                    | the `.deb` package                                 |
+| Windows                           | WSL with Ubuntu, then the `.deb` package inside it |
+| macOS, ARM computers, other Linux | from the source code, with `scripts/install.sh`    |
+
+### From a package (Linux, and Windows through WSL)
+
+The packages are for Intel and AMD computers (x86_64) with Fedora 35, RHEL 9, Debian 12, Ubuntu 22.04 or anything newer. Each one brings its own Node.js, so you install nothing else first.
+
+Put the package and `install.sh` in one folder and run:
+
+```sh
+sh install.sh
+```
+
+It says which package fits your computer and installs it after you say yes. `sh install.sh --print` only tells you. Or install by hand:
+
+```sh
+sudo dnf install ./symposium-<version>-1.x86_64.rpm     # Fedora, RHEL
+sudo apt install ./symposium_<version>_amd64.deb         # Debian, Ubuntu, WSL
+```
+
+Symposium goes into `/opt/symposium`, with a `symposium` command and an entry in your applications menu. From the menu it opens in its own window when Chrome, Chromium or Edge is installed, and in a browser tab otherwise. Remove it with `sudo dnf remove symposium` or `sudo apt remove symposium`. Your data and projects stay.
+
+To build the packages yourself, run `scripts/package.sh` in the Symposium folder. They land in `dist/packages` together with `install.sh`. `scripts/test-packages.sh` then installs and tries each one in a clean container.
+
+**Windows.** Symposium runs under [WSL](https://learn.microsoft.com/windows/wsl/install), the Linux system built into Windows:
+
+1. In PowerShell, as administrator: `wsl --install`. Restart when asked and finish setting up Ubuntu.
+2. Open the Ubuntu terminal, go to the folder with the package and `install.sh`, and run `sh install.sh`.
+3. Install your agent program inside Ubuntu too, then start Symposium there with `symposium`. The page opens in your Windows browser.
+
+There is no Windows program (`.exe`) yet.
+
+### From the source code (macOS and everything else)
+
+| Tool    | Version     | Check with       |
+| ------- | ----------- | ---------------- |
+| Node.js | 22 or newer | `node --version` |
+
+From the Symposium folder:
 
 ```sh
 scripts/install.sh
@@ -20,8 +59,6 @@ This fetches Symposium's packages, builds the chat page and adds a `symposium` c
 - `scripts/install.sh --system` puts the command in `/usr/local/bin` instead, for every user. It asks for sudo for that step only.
 - `scripts/install.sh --uninstall` removes the command and the menu entry.
 - Keep the Symposium folder where it is: the command runs Symposium from there. To update, pull the new code and run the script again.
-
-**Windows.** Symposium runs under [WSL](https://learn.microsoft.com/windows/wsl/install) (the Linux system built into Windows). Install WSL, open its terminal, install Node.js and git there, then follow this guide inside it. The page opens in your Windows browser. There is no Windows program (`.exe`) yet: the engine starts the agent programs and git in ways that have only been built and tested on Linux and macOS.
 
 pnpm blocks packages' install scripts unless they are approved. Symposium approves only `better-sqlite3` (the SQLite driver) and `esbuild` (used by Vite and tsx), in `pnpm-workspace.yaml`. If `pnpm install` still warns about ignored build scripts, run `pnpm approve-builds better-sqlite3 esbuild`.
 
@@ -71,9 +108,11 @@ This starts Symposium on your machine and opens <http://localhost:4400> in your 
 | ----------------------- | --------------------------------------------------------------------------- |
 | `symposium`             | Start and open the browser. If it is already running, just open the browser |
 | `symposium --no-open`   | Start without opening the browser                                           |
+| `symposium --app`       | Open in its own window, when Chrome, Chromium or Edge is installed          |
 | `symposium --port 5000` | Use another port                                                            |
 | `symposium status`      | Say whether it is running                                                   |
 | `symposium stop`        | Stop it                                                                     |
+| `symposium --version`   | Say which version is installed                                              |
 
 Started from the applications menu, Symposium runs in the background: use `symposium stop` to end it.
 
