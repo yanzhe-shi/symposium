@@ -126,7 +126,7 @@ describe('review of every change', () => {
 
     // Lea is told how reviews work, and reads the verdict with Ada's report.
     const [first, second] = calls('Lea');
-    expect(first!.systemPrompt).toContain('## Reviews');
+    expect(first!.systemPrompt).toContain('Symposium has a reviewer judge every change');
     expect(second!.prompt).toContain(`Review by Rex: approved (message #${review.id})`);
     // The review itself is handed to nobody: one turn each for Ada and Rex.
     expect(calls('Ada')).toHaveLength(1);
@@ -181,7 +181,7 @@ describe('review of every change', () => {
     await hire('Ada', 'worker', [CART, { text: 'More.', files: { 'more.ts': 'v1\n' } }]);
     await say('Build a shop');
     expect(await diff()).not.toHaveProperty('review');
-    expect(calls('Lea')[0]!.systemPrompt).not.toContain('## Reviews');
+    expect(calls('Lea')[0]!.systemPrompt).not.toContain('## Checks and reviews');
     expect(lea.role).toBe('lead');
 
     expect((await setGroup({ autoReview: false })).json().autoReview).toBe(false);

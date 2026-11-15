@@ -25,7 +25,7 @@ Send this without mentioning anyone, so it goes to the lead:
 3. Ada and Gio work at the same time, each in their own worktree. Their cards show what they are doing, and the **Code** tab shows their changes live. You can keep messaging anyone while they work.
 4. If a worker wants to run a command, a card asks you first. Click **Allow once**, **Always allow** or **Deny**.
 5. Their changes appear in the chat as diffs.
-6. Rex reviews the diffs and either approves or asks for fixes.
+6. Rex reviews each diff by himself, as soon as it is there, and the diff shows his verdict. If he asks for changes, Lea sends the worker back.
 7. Lea tells you when work is ready. You click **Merge into main**.
 8. Once the team has been idle for 30 seconds, Sam updates `project.md` with the decisions and status.
 

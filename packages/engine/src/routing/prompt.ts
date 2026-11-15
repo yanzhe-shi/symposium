@@ -82,6 +82,7 @@ function accessRules(
   access: AgentAccess,
   branch: string | undefined,
   terminal: PromptInput['terminal'],
+  checkCommand: string,
 ): string {
   const commands = terminalRules(terminal, access);
   switch (access) {
@@ -89,6 +90,11 @@ function accessRules(
       return [
         `- You work in your own git worktree${branch ? ` on branch \`${branch}\`` : ''}. Edit files there.`,
         '- After your turn Symposium commits your changes and shows the CEO a diff. Nothing reaches the main project until the CEO merges it.',
+        ...(checkCommand
+          ? [
+              `- Symposium then runs the project's check, \`${checkCommand}\`, on your changes and puts the result on the diff. You need not run it yourself, and nobody else has to.`,
+            ]
+          : []),
         ...commands,
       ].join('\n');
     case 'read':
@@ -147,13 +153,29 @@ The CEO approves a plan before work starts, and Symposium enforces it. When you 
 - If the CEO declines, nothing was started. Wait for what they want changed, then send a new plan with its assignments.
 - Each plan card in the conversation shows its status: pending, approved or declined.`;
 
-const AUTO_REVIEW = `## Reviews
-
-Symposium has a reviewer check every change by itself, once it passes the project's check if there is one. The review is in the chat and its verdict is on the diff, before a teammate's report reaches you.
-
-- Don't ask for a review of a change yourself.
-- If changes are needed, send the author back with what to fix.
-- If it is approved, tell the CEO it is ready to merge.`;
+/** What the lead is told about the checks and reviews the engine does by itself. */
+function qualityHelp(group: Group, team: Agent[]): string | undefined {
+  const lines: string[] = [];
+  if (group.checkCommand) {
+    lines.push(
+      `- Symposium runs the project's check, \`${group.checkCommand}\`, on every change, in its author's worktree. The result is on the diff. Trust it: nobody needs to run it again.`,
+    );
+  }
+  if (group.autoReview && team.some((member) => member.role === 'reviewer')) {
+    lines.push(
+      "- Symposium has a reviewer judge every change, unless it fails the check. The review is in the chat and its verdict is on the diff. Don't ask for a review of a change yourself.",
+    );
+  }
+  if (lines.length === 0) return undefined;
+  return [
+    '## Checks and reviews',
+    '',
+    "Symposium does these by itself, before a teammate's report reaches you:",
+    '',
+    ...lines,
+    '- If the check failed or changes are needed, send the author back with what to fix. Otherwise tell the CEO it is ready to merge.',
+  ].join('\n');
+}
 
 export function buildSystemPrompt(input: PromptInput): string {
   const { group, agent, team, roleText, roles, access, branch, terminal } = input;
@@ -178,7 +200,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       '- Never mention yourself. Never write "@CEO": the CEO reads every message, so just say what you have to say.',
       '- Teammates work at the same time, and the CEO can write at any moment without stopping anyone. Messages that arrive while you work reach you together in your next turn: answer them all in one reply.',
       '- Keep replies short and concrete. No greetings or sign-offs.',
-      accessRules(access, branch, terminal),
+      accessRules(access, branch, terminal, group.checkCommand),
       // The role text describes the role's usual access. Say so when this agent's differs.
       ...(access === roleAccess(agent.role)
         ? []
@@ -200,9 +222,8 @@ export function buildSystemPrompt(input: PromptInput): string {
   );
   if (agent.role === 'lead') {
     sections.push(group.leadAsksFirst ? PLAN_APPROVAL : START_NOW);
-    if (group.autoReview && team.some((member) => member.role === 'reviewer')) {
-      sections.push(AUTO_REVIEW);
-    }
+    const quality = qualityHelp(group, team);
+    if (quality) sections.push(quality);
     sections.push(hireHelp(roles ?? []));
   }
   return sections.join('\n\n');

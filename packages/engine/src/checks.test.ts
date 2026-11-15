@@ -161,6 +161,9 @@ describe('checks on a worker’s change', () => {
     const prompt = t.mocks.get('Lea')!.calls[1]!.prompt;
     expect(prompt).toContain('Check `echo "1 test failed"; exit 1`: failed (exit code 1)');
     expect(prompt).toContain('1 test failed');
+    // Both are told that the engine runs the check, so neither asks for it to be run again.
+    expect(t.mocks.get('Lea')!.calls[1]!.systemPrompt).toContain("runs the project's check");
+    expect(t.mocks.get('Ada')!.calls[0]!.systemPrompt).toContain('You need not run it yourself');
   });
 
   it('can still be merged by the human when the check failed', async () => {
