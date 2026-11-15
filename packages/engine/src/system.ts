@@ -10,11 +10,17 @@ const PROVIDER_COMMANDS: Partial<Record<ProviderId, string>> = {
 
 /**
  * What is installed on this machine, for the first-run checks. Only looks for the programs on
- * PATH. It runs nothing and reads no login.
+ * PATH and asks whether a sandbox can be made. It reads no login.
  */
 export async function systemInfo(ctx: AppContext): Promise<SystemInfo> {
   const found = async (command: string): Promise<boolean> => commandExists(command);
+  const works = await ctx.canSandbox();
+  const without: ProviderId[] = [];
+  for (const provider of PROVIDERS) {
+    if (works && !(await ctx.canSandbox(provider.id))) without.push(provider.id);
+  }
   return {
+    sandbox: { works, without },
     git: await found('git'),
     vscode: await found(ctx.vscodeCommand),
     providers: {

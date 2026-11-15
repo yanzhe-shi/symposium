@@ -463,6 +463,11 @@ export interface SystemInfo {
   vscode: boolean;
   /** Per provider, whether its program was found. API and mock providers need none. */
   providers: Record<ProviderId, boolean>;
+  /**
+   * Whether this computer can sandbox agents at all (Linux with bubblewrap), and the providers
+   * whose agents still run without one because something more is missing.
+   */
+  sandbox: { works: boolean; without: ProviderId[] };
 }
 
 /** Body of `POST /api/groups/:id/terminal`: a command the human runs themselves. */

@@ -729,6 +729,11 @@ input.switch:checked::after {
   color: var(--muted);
 }
 
+.setting-warning {
+  font-weight: 600;
+  color: var(--warning);
+}
+
 .setting-row-stacked {
   flex-direction: column;
   align-items: stretch;

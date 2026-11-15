@@ -92,7 +92,7 @@ Built-in role descriptions live in [`roles/`](roles). **Roles** in the Team pane
 | Off            | The agent has no terminal                                                        |
 | Ask every time | Every command waits in the chat for **Allow once**, **Always allow** or **Deny** |
 | Allow-list     | Commands on the agent's list run at once. Any other command asks                 |
-| Full auto      | Commands run without asking, in the agent's own worktree                         |
+| Full auto      | Commands run without asking, in the agent's own worktree, inside the sandbox     |
 
 In every mode these always ask: `git push`, deleting a branch, `sudo`, and anything that reaches outside the agent's folder. A command nobody answers within 10 minutes is refused. An agent that works in the shared project folder (a lead or reviewer given a terminal) can run only what its allow-list covers. Terminals need Claude Code or Antigravity; API agents have none.
 
@@ -107,10 +107,11 @@ In every mode these always ask: `git push`, deleting a branch, `sudo`, and anyth
 Agents run on your machine with your logins, so the safe choice is the default.
 
 - Workers can edit files only inside their own worktree. The lead and reviewers can only read.
+- **A sandbox holds them to it** (Linux, on by default). Each agent's program, everything it runs and the check command are started inside [bubblewrap](https://github.com/containers/bubblewrap): the system itself refuses a write outside the agent's folder, and your keys and logins (`~/.ssh`, `~/.gnupg`, cloud and GitHub logins, browser profiles, the keyring) are hidden from it. It does not depend on what the agent, the model or the provider chooses to do. What it leaves open is listed in the [setup guide](SETUP.md#the-sandbox).
 - An agent runs a terminal command only if the engine allows it. By default only workers have a terminal, and each of their commands waits for you. Some commands always wait for you, whatever the mode: `git push`, deleting a branch, `sudo`, and anything that reaches outside the agent's folder.
 - The check command is yours: you type it in **Settings**, and Symposium runs it, never an agent. It runs on the worker's changes without asking each time, so it executes code an agent wrote. Leave it empty if you do not want that.
-- These command checks read the command as text. They catch the obvious cases; they are not a sandbox. Give **Full auto** only to agents and projects you would trust with your own terminal.
-- Claude Code runs in restricted mode and Antigravity in its sandbox. If an agent still changes a file outside its folder, Symposium says so in the chat.
+- The command checks read the command as text and catch the obvious cases. The sandbox is what stops the rest. Where there is no sandbox (macOS, or Linux without bubblewrap), give **Full auto** only to agents and projects you would trust with your own terminal.
+- Without the sandbox, Claude Code runs in restricted mode and Antigravity in its own sandbox. If an agent still changes a file outside its folder, Symposium says so in the chat.
 - The lead's plan waits for your approval, and the engine enforces it: until you click **Approve plan**, the lead's assignments reach nobody.
 - Nothing is merged without your click. Symposium never pushes, force-pushes or deletes branches.
 - Every message, agent turn, tool call, command and its approval, hire, commit and merge is logged with who did it.

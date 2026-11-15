@@ -22,6 +22,8 @@ describe('system checks', () => {
     expect(info.git).toBe(true);
     expect(info.vscode).toBe(false);
     expect(info.providers.mock).toBe(true);
+    // Tests run without a sandbox on every computer.
+    expect(info.sandbox).toEqual({ works: false, without: [] });
     expect(Object.keys(info.providers).sort()).toEqual([
       'antigravity',
       'claude-code',

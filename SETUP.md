@@ -149,6 +149,7 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **Check command** (**Settings**): empty by default. Type the command that tells you whether the project still works, such as `npm test` or `make check`. After every change a worker makes, Symposium runs it in that worker's worktree and shows the result on the diff: **Check passed**, or **Check failed** with the end of the output. The lead and the reviewers see the result too, and a failed check turns **Merge** into **Merge anyway**. A check may take 10 minutes at most, and stopping the agent stops it. Mind what it means: the command runs the worker's code without asking you each time, like an allow-listed command.
 - **Review every change** (**Settings**): on by default, and it needs a reviewer on the team. After a worker's change passes the check (or when there is no check), Symposium gives a reviewer one turn on it, before the lead or you act on it. The review appears in the chat and its verdict on the diff: **approved** or **asks for changes**. The reviewer reads the worker's worktree and cannot change or run anything. Symposium picks a reviewer on another provider than the author when there is one, so a different model looks at the work; failing that, one on another model. A change that fails the check is not reviewed: it goes back to its author first. The review is not sent on by itself: the lead, or you, decides what happens next. Each review costs one turn of the reviewer.
 - **Approve the lead's plan first** (**Settings**): on by default. Symposium, not the lead, enforces it: whenever the lead hands out work for a new message of yours, the hand-off waits for your **Approve plan**. One approval covers everything that follows from that message. What you ask a teammate directly with @name is never held. Switch it off and the lead assigns tasks straight away.
+- **Sandbox** (**Settings**): on by default. See [The sandbox](#the-sandbox) below.
 - **project.md updates** happen once the whole team has been idle for 30 seconds, not after every reply.
 - **Edit** an agent from its card to change its model, role, effort, file access or terminal without firing it. The change applies from its next turn. Giving a lead or reviewer **Edit** file access gives it its own branch and worktree, like a worker.
 - **Roles** (Team panel): read and rewrite the job description of any role, including the built-in lead, worker, reviewer and scribe, or add your own. A new role "works like" one of those four, which sets what Symposium lets its agents do. An edit applies from each agent's next turn, in every group. **Reset to built-in** undoes your changes to a built-in role.
@@ -167,6 +168,29 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **Rename or delete a group** under **Settings** in the header. Deleting removes the chat, the team, their memory and their worktrees. Your project folder stays, and so do its git branches, so unmerged work is still on `symposium/<name>`.
 - **Notifications.** The bell at the bottom of the sidebar switches them on; your browser asks for its permission once. While Symposium is in the background you are then told when a plan, a command or a hire waits for your decision, and when the team has stopped working. The tab's title also shows how many cards wait, as in `(2) Symposium`. This covers the group that is open in the page.
 - **Light and dark.** Symposium follows your system's setting. The round button at the bottom of the sidebar switches between system, light and dark.
+
+## The sandbox
+
+On Linux, Symposium starts every agent's program inside a sandbox made with [bubblewrap](https://github.com/containers/bubblewrap) (`bwrap`), the tool Flatpak uses. It is on for every group unless you switch it off under **Settings**. The system enforces it, so it holds whatever the agent, the model or the provider's program does, and it covers the commands an agent runs and your check command too.
+
+Inside it, an agent's program:
+
+- **can change** its own folder (a worker's worktree; nothing for a lead or reviewer), the download caches of npm, pnpm, yarn, bun, pip, uv, cargo, go, Maven and Gradle, the folders you add under **More folders agents may write to**, and its own provider's login files;
+- **can read** the project and the rest of your disk;
+- **sees empty**: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker`, the GitHub and Google Cloud logins, `~/.netrc`, `~/.git-credentials`, password stores, browser and mail profiles, the other provider's login, Symposium's own data (other agents' folders and memory, the chat), your session's sockets (the keyring, the ssh agent) and `/tmp`. Its `/tmp` is its own and is emptied after every turn;
+- **cannot see or stop** other programs on your computer, and it ends with everything it started when the turn ends.
+
+A write anywhere else fails with "Read-only file system". Agents are told so and asked not to look for a way around it. If a tool your project needs fails that way, add the folder it writes to under **More folders agents may write to**.
+
+**What you need.** `bwrap`, which the packages ask for and most Linux systems already have (`sudo dnf install bubblewrap` or `sudo apt install bubblewrap`). Antigravity keeps its login in your keyring, so its agents also need `xdg-dbus-proxy`: Symposium uses it to let them reach the keyring and nothing else of your session. **Settings** says so when something is missing. Then agents run without the sandbox, as they do on macOS, and Symposium tells you.
+
+**What it does not stop.** Know these before you rely on it:
+
+- **The network is open**, because the agent's program needs it. A command can send out what it can read: your project, the rest of your disk outside the hidden places, and its own provider's login. It can also reach programs that listen on your computer, Symposium itself included.
+- Files with secrets in places Symposium does not know stay readable, for example an `.env` in another project or tokens in `~/.npmrc`.
+- An Antigravity agent can ask your keyring for any secret in it, not only its own.
+- The download caches are writable, so an agent could put a bad package there for a later install to find.
+- `git push`, `sudo` and deleting a branch still wait for you in every mode. So does a command that names a path outside the agent's folder, although the sandbox would refuse the write anyway.
 
 ## Where your data is
 
@@ -195,5 +219,6 @@ Set `SYMPOSIUM_HOME` to keep this data somewhere else.
 | "The chat page has not been built yet"                 | Run `scripts/install.sh`, or `pnpm install && pnpm build`.                                             |
 | "Port 4400 is used by another program"                 | Start with `symposium --port 4401`.                                                                    |
 | An agent waits and nothing happens                     | Look for a command card waiting for your answer. After 10 minutes without one the command is refused.  |
+| A command or the check fails: "Read-only file system"  | The sandbox refused a write outside the agent's folder. Add the folder under **Settings** if needed.   |
 | An Antigravity agent says it "stopped without a reply" | You denied its command, and Antigravity ends its turn when that happens. Message it again to carry on. |
 | "The `code` command was not found"                     | In VS Code, open the Command Palette and run "Shell Command: Install 'code' command in PATH".          |

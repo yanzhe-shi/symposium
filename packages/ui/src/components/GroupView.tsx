@@ -1,4 +1,4 @@
-import type { Group, UpdateGroupRequest } from '@symposium/engine/protocol';
+import type { Group, SystemInfo, UpdateGroupRequest } from '@symposium/engine/protocol';
 import {
   useEffect,
   useRef,
@@ -37,10 +37,12 @@ const PARALLEL_CHOICES = [1, 2, 3, 4, 5, 6, 8];
 /** The group's settings, tucked behind one button so the title bar stays calm. */
 function GroupSettings({
   group,
+  system,
   onChange,
   onDelete,
 }: {
   group: Group;
+  system: SystemInfo | undefined;
   onChange: (changes: UpdateGroupRequest) => void;
   onDelete: () => void;
 }) {
@@ -53,6 +55,19 @@ function GroupSettings({
     const wanted = check.trim();
     setCheck(wanted);
     if (wanted !== group.checkCommand) onChange({ checkCommand: wanted });
+  }
+
+  const [folders, setFolders] = useState(group.sandboxFolders.join('\n'));
+
+  function saveFolders(): void {
+    const wanted = folders
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    setFolders(wanted.join('\n'));
+    if (wanted.join('\n') !== group.sandboxFolders.join('\n')) {
+      onChange({ sandboxFolders: wanted });
+    }
   }
 
   function rename(): void {
@@ -193,6 +208,55 @@ function GroupSettings({
               onChange={(event) => onChange({ autoReview: event.target.checked })}
             />
           </label>
+          <label className="setting-row">
+            <span>
+              Sandbox
+              <small>
+                On: whatever an agent runs can change files only in its own folder, and your keys
+                and logins are hidden from it. The system enforces it, not the agent.
+                {system && !system.sandbox.works && (
+                  <strong className="setting-warning">
+                    {' '}
+                    Not available on this computer, so agents run without it. It needs Linux with
+                    bubblewrap (<code>bwrap</code>).
+                  </strong>
+                )}
+                {system && system.sandbox.without.includes('antigravity') && (
+                  <strong className="setting-warning">
+                    {' '}
+                    Antigravity agents run without it here: install <code>xdg-dbus-proxy</code>.
+                  </strong>
+                )}
+              </small>
+            </span>
+            <input
+              type="checkbox"
+              className="switch"
+              role="switch"
+              checked={group.sandbox}
+              onChange={(event) => onChange({ sandbox: event.target.checked })}
+            />
+          </label>
+          {group.sandbox && (
+            <label className="setting-row setting-row-stacked">
+              <span>
+                More folders agents may write to
+                <small>
+                  One full path per line, for a tool that fails with "Read-only file system", such
+                  as a build cache. The caches of npm, pnpm, pip, cargo and their like are already
+                  open.
+                </small>
+              </span>
+              <textarea
+                value={folders}
+                rows={2}
+                placeholder="/home/you/.cache/my-build-tool"
+                spellCheck={false}
+                onChange={(event) => setFolders(event.target.value)}
+                onBlur={saveFolders}
+              />
+            </label>
+          )}
           <div className="setting-row setting-row-danger">
             <span>
               Delete this group
@@ -350,6 +414,7 @@ export function GroupView({ group, catalog, onGroupChanged, onGroupDeleted }: Gr
           </span>
           <GroupSettings
             group={group}
+            system={catalog.system}
             onChange={(changes) => void changeGroup(changes)}
             onDelete={() => void deleteGroup()}
           />

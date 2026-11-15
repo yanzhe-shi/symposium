@@ -123,6 +123,9 @@ AutoReqProv:    no
 Requires:       git
 Requires:       glibc >= $MIN_GLIBC
 Requires:       libstdc++
+# For the sandbox agents run in. Symposium works without them, unsandboxed.
+Recommends:     bubblewrap
+Recommends:     xdg-dbus-proxy
 %global debug_package %{nil}
 %global __os_install_post %{nil}
 %global _build_id_links none
@@ -165,6 +168,7 @@ Section: devel
 Priority: optional
 Architecture: amd64
 Depends: git, libc6 (>= $MIN_GLIBC), libstdc++6 (>= 11)
+Recommends: bubblewrap, xdg-dbus-proxy
 Installed-Size: $(du -sk "$STAGE" | cut -f1)
 Maintainer: Symposium project <noreply@symposium.invalid>
 Description: $SUMMARY
