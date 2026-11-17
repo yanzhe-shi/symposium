@@ -59,6 +59,7 @@ describe('parseReplyBlocks', () => {
     expect(parseReplyBlocks('@ceo, done.\n@Ada next').text).toBe('done.\n@Ada next');
     expect(parseReplyBlocks('Tell @CEO nothing').text).toBe('Tell @CEO nothing');
     expect(parseReplyBlocks('@CEOs are people').text).toBe('@CEOs are people');
+    expect(parseReplyBlocks("@CEO's lead: done.").text).toBe("@CEO's lead: done.");
   });
 
   it('removes memory and hire blocks and collects their contents', () => {
