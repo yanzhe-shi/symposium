@@ -20,7 +20,7 @@ export async function systemInfo(ctx: AppContext): Promise<SystemInfo> {
     if (works && !(await ctx.canSandbox(provider.id))) without.push(provider.id);
   }
   return {
-    sandbox: { works, without },
+    sandbox: { works, without, network: works && (await ctx.canIsolateNetwork()) },
     git: await found('git'),
     vscode: await found(ctx.vscodeCommand),
     providers: {

@@ -1,4 +1,4 @@
-import type { AgentAccess } from '@symposium/adapters';
+import type { AgentAccess, SandboxNetwork } from '@symposium/adapters';
 import { describeCheck } from '../checks.js';
 import type { Agent, AgentSettings, Group, Message, ReviewResult, RoleInfo } from '../protocol.js';
 import { applyPlanApproval, roleAccess } from '../roles.js';
@@ -27,6 +27,8 @@ export interface PromptInput {
   terminal?: Pick<AgentSettings, 'commands' | 'allowlist'>;
   /** Whether the agent's process runs in Symposium's sandbox. */
   sandboxed?: boolean;
+  /** What the sandbox lets it reach over the network. Left out: the computer's own network. */
+  network?: SandboxNetwork;
   /** Branch the agent works on, for workers. */
   branch?: string;
   projectMd: string;
@@ -81,12 +83,18 @@ function terminalRules(terminal: PromptInput['terminal'], access: AgentAccess): 
 }
 
 /** What a sandboxed agent is told, so that it does not fight what the kernel refuses. */
-function sandboxRules(access: AgentAccess): string[] {
+function sandboxRules(access: AgentAccess, network: SandboxNetwork): string[] {
+  const ports = network === 'host' ? [] : network.hostPorts;
   return [
     access === 'edit'
       ? '- You work in a sandbox. Your tools and commands can change files only in your folder; package managers can still fill their caches. Anywhere else a write fails with "Read-only file system", and some folders outside the project look empty. That is intended: do not look for a way around it. Say what you could not do.'
       : '- You work in a sandbox. Nothing you run can change a file, and some folders outside the project look empty. That is intended: do not look for a way around it.',
     '- `/tmp` is yours alone and is emptied after every turn.',
+    ...(network === 'host'
+      ? []
+      : [
+          `- You reach the internet, but no program on this computer${ports.length ? `, except on port${ports.length > 1 ? 's' : ''} ${ports.join(', ')} of localhost` : ''}. Your localhost is otherwise your own: a server you start there works. If a test needs a database or server that runs on this computer, say so: the CEO can open its port.`,
+        ]),
   ];
 }
 
@@ -96,10 +104,11 @@ function accessRules(
   terminal: PromptInput['terminal'],
   checkCommand: string,
   sandboxed: boolean,
+  network: SandboxNetwork,
 ): string {
   const commands = [
     ...terminalRules(terminal, access),
-    ...(sandboxed && access !== 'none' ? sandboxRules(access) : []),
+    ...(sandboxed && access !== 'none' ? sandboxRules(access, network) : []),
   ];
   switch (access) {
     case 'edit':
@@ -217,7 +226,14 @@ export function buildSystemPrompt(input: PromptInput): string {
       '- Never mention yourself. Never write "@CEO": the CEO reads every message, so just say what you have to say.',
       '- Teammates work at the same time, and the CEO can write at any moment without stopping anyone. Messages that arrive while you work reach you together in your next turn: answer them all in one reply.',
       '- Keep replies short and concrete. No greetings or sign-offs.',
-      accessRules(access, branch, terminal, group.checkCommand, input.sandboxed === true),
+      accessRules(
+        access,
+        branch,
+        terminal,
+        group.checkCommand,
+        input.sandboxed === true,
+        input.network ?? 'host',
+      ),
       // The role text describes the role's usual access. Say so when this agent's differs.
       ...(access === roleAccess(agent.role)
         ? []

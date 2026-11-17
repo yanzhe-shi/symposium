@@ -104,6 +104,12 @@ export const migrations: readonly string[] = [
   ALTER TABLE groups ADD COLUMN sandbox INTEGER NOT NULL DEFAULT 1;
   ALTER TABLE groups ADD COLUMN sandbox_folders TEXT NOT NULL DEFAULT '[]';
   `,
+
+  // 10: a network of its own for the sandbox (milestone 26). The TCP ports on this computer's
+  // localhost that sandboxed processes may still reach, as a JSON list.
+  `
+  ALTER TABLE groups ADD COLUMN sandbox_ports TEXT NOT NULL DEFAULT '[]';
+  `,
 ];
 
 export function getSchemaVersion(db: Database.Database): number {

@@ -1,14 +1,28 @@
 import { existsSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import { MockAdapter, sandboxAvailable, type MockReply } from '@symposium/adapters';
+import {
+  MockAdapter,
+  privateNetworkAvailable,
+  sandboxAvailable,
+  type MockReply,
+} from '@symposium/adapters';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Agent, Group, Message } from '../protocol.js';
 import { listEvents } from '../store/events.js';
 import { createTestApp, type TestApp } from '../testing.js';
-import { decideSandbox, validateSandboxFolders, type SandboxInput } from './sandbox.js';
+import {
+  decideSandbox,
+  validateSandboxFolders,
+  validateSandboxPorts,
+  type SandboxInput,
+} from './sandbox.js';
 
 // Some systems and most containers do not allow bubblewrap.
 const realSandbox = await sandboxAvailable();
+// And pasta, for a network of its own, is not everywhere.
+const realNetwork = await privateNetworkAvailable();
 
 const HOME = '/home/cleo';
 const worker: SandboxInput = {
@@ -20,6 +34,9 @@ const worker: SandboxInput = {
   canEdit: true,
   provider: 'claude-code',
   extraFolders: [],
+  privateNetwork: true,
+  hostPorts: [],
+  enginePort: 4400,
 };
 
 describe('decideSandbox', () => {
@@ -82,6 +99,31 @@ describe('decideSandbox', () => {
   });
 });
 
+describe('the network of a sandbox', () => {
+  it('is its own where the computer can, reaching none of this computer by default', () => {
+    expect(decideSandbox(worker).network).toEqual({ hostPorts: [] });
+  });
+
+  it("lets through the ports the human named, and never the engine's own", () => {
+    const sandbox = decideSandbox({ ...worker, hostPorts: [5432, 4400, 6379] });
+    expect(sandbox.network).toEqual({ hostPorts: [5432, 6379] });
+  });
+
+  it("is the computer's own where it cannot have one", () => {
+    expect(decideSandbox({ ...worker, privateNetwork: false }).network).toBe('host');
+  });
+});
+
+describe('validateSandboxPorts', () => {
+  it('sorts the ports and drops repeats', () => {
+    expect(validateSandboxPorts([6379, 5432, 6379], 4400)).toEqual({ ports: [5432, 6379] });
+  });
+
+  it("refuses Symposium's own port", () => {
+    expect(validateSandboxPorts([5432, 4400], 4400)).toHaveProperty('error');
+  });
+});
+
 describe('validateSandboxFolders', () => {
   it('tidies the list', () => {
     expect(
@@ -102,8 +144,11 @@ describe('the sandbox on a team', () => {
   let group: Group;
   let folder: string;
 
-  async function start(canSandbox: boolean): Promise<void> {
-    t = await createTestApp({ canSandbox: async () => canSandbox });
+  async function start(canSandbox: boolean, canIsolateNetwork = false): Promise<void> {
+    t = await createTestApp({
+      canSandbox: async () => canSandbox,
+      canIsolateNetwork: async () => canIsolateNetwork,
+    });
     folder = join(t.workDir, 'shop');
     group = (
       await t.request({
@@ -179,6 +224,39 @@ describe('the sandbox on a team', () => {
     expect(turns.map((turn) => turn.detail.sandboxed)).toEqual([true, true, true]);
   });
 
+  it('keeps the ports the human names, and refuses the engine’s own', async () => {
+    await start(true, true);
+    expect(group.sandboxPorts).toEqual([]);
+    expect((await setGroup({ sandboxPorts: [6379, 5432] })).json().sandboxPorts).toEqual([
+      5432, 6379,
+    ]);
+    const refused = await setGroup({ sandboxPorts: [4400] });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().error).toContain("Symposium's own");
+    expect((await setGroup({ sandboxPorts: [70000] })).statusCode).toBe(400);
+  });
+
+  it('gives a turn a network of its own where the computer can', async () => {
+    await start(true, true);
+    await setGroup({ sandboxPorts: [5432] });
+    await hire('Ada', 'worker', [{ text: 'Built.' }]);
+    await say('@Ada build the cart');
+    expect(firstTask('Ada').sandbox!.network).toEqual({ hostPorts: [5432] });
+    expect(firstTask('Ada').systemPrompt).toContain(
+      'no program on this computer, except on port 5432 of localhost',
+    );
+    const turn = listEvents(t.db, group.id).find((event) => event.kind === 'agent.turn');
+    expect(turn!.detail.privateNetwork).toBe(true);
+  });
+
+  it('gives a turn the computer’s network where it cannot have its own', async () => {
+    await start(true, false);
+    await hire('Ada', 'worker', [{ text: 'Built.' }]);
+    await say('@Ada build the cart');
+    expect(firstTask('Ada').sandbox!.network).toBe('host');
+    expect(firstTask('Ada').systemPrompt).not.toContain('no program on this computer');
+  });
+
   it('gives none when the human switched it off', async () => {
     await start(true);
     await setGroup({ sandbox: false });
@@ -220,4 +298,45 @@ describe('the sandbox on a team', () => {
       expect(existsSync(join(firstTask('Ada').workingDirectory, 'checked.txt'))).toBe(true);
     },
   );
+
+  // Needs pasta as well. A server on this computer stands in for Symposium's API.
+  it.skipIf(!realSandbox || !realNetwork)(
+    'keeps the check command from programs on this computer, except the ports named',
+    async () => {
+      const servers = await Promise.all([listen(), listen()]);
+      try {
+        const [named, other] = servers.map((server) => (server.address() as AddressInfo).port);
+        await start(true, true);
+        await setGroup({
+          sandboxPorts: [named],
+          checkCommand: [named, other]
+            .map(
+              (port) =>
+                `node -e "fetch('http://127.0.0.1:${port}/').then(() => console.log('${port} reached'), () => console.log('${port} refused'))"`,
+            )
+            .join(' && '),
+        });
+        await hire('Ada', 'worker', [{ text: 'Built.', files: { 'cart.ts': 'v1\n' } }]);
+        await say('@Ada build the cart');
+
+        const all: Message[] = (
+          await t.request({ url: `/api/groups/${group.id}/messages?limit=500` })
+        ).json();
+        const diff = all.find((message) => message.meta?.type === 'diff');
+        expect(diff!.meta).toMatchObject({
+          check: { status: 'passed', output: `${named} reached\n${other} refused\n` },
+        });
+      } finally {
+        servers.forEach((server) => server.close());
+      }
+    },
+  );
 });
+
+/** A server on this computer's localhost, on a free port. */
+function listen(): Promise<Server> {
+  return new Promise((resolve) => {
+    const server = createServer((_request, response) => response.end('hi'));
+    server.listen(0, '127.0.0.1', () => resolve(server));
+  });
+}

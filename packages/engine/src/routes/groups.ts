@@ -3,6 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import {
   MAX_SANDBOX_FOLDERS,
   MAX_SANDBOX_FOLDER_LENGTH,
+  MAX_SANDBOX_PORTS,
+  validateSandboxPorts,
   validateSandboxFolders,
 } from '../commands/sandbox.js';
 import type { HumanTerminal } from '../commands/terminal.js';
@@ -104,6 +106,11 @@ export function registerGroupRoutes(
               maxItems: MAX_SANDBOX_FOLDERS,
               items: { type: 'string', maxLength: MAX_SANDBOX_FOLDER_LENGTH },
             },
+            sandboxPorts: {
+              type: 'array',
+              maxItems: MAX_SANDBOX_PORTS,
+              items: { type: 'integer', minimum: 1, maximum: 65535 },
+            },
           },
           additionalProperties: false,
         },
@@ -113,6 +120,8 @@ export function registerGroupRoutes(
       requireGroup(ctx, request.params.groupId);
       const folders = validateSandboxFolders(request.body.sandboxFolders ?? []);
       if ('error' in folders) throw badRequest(folders.error);
+      const ports = validateSandboxPorts(request.body.sandboxPorts ?? [], ctx.enginePort);
+      if ('error' in ports) throw badRequest(ports.error);
       const group = updateGroup(ctx.db, request.params.groupId, {
         name: request.body.name?.trim(),
         maxRounds: request.body.maxRounds,
@@ -122,6 +131,7 @@ export function registerGroupRoutes(
         autoReview: request.body.autoReview,
         sandbox: request.body.sandbox,
         sandboxFolders: request.body.sandboxFolders && folders.folders,
+        sandboxPorts: request.body.sandboxPorts && ports.ports,
       })!;
       ctx.hub.broadcast(group.id, { type: 'group.changed', group });
       // A higher cap may let waiting agents start.

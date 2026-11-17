@@ -150,6 +150,7 @@ To make merging work, keep your project folder on its base branch (shown in the 
 - **Review every change** (**Settings**): on by default, and it needs a reviewer on the team. After a worker's change passes the check (or when there is no check), Symposium gives a reviewer one turn on it, before the lead or you act on it. The review appears in the chat and its verdict on the diff: **approved** or **asks for changes**. The reviewer reads the worker's worktree and cannot change or run anything. Symposium picks a reviewer on another provider than the author when there is one, so a different model looks at the work; failing that, one on another model. A change that fails the check is not reviewed: it goes back to its author first. The review is not sent on by itself: the lead, or you, decides what happens next. Each review costs one turn of the reviewer.
 - **Approve the lead's plan first** (**Settings**): on by default. Symposium, not the lead, enforces it: whenever the lead hands out work for a new message of yours, the hand-off waits for your **Approve plan**. One approval covers everything that follows from that message. What you ask a teammate directly with @name is never held. Switch it off and the lead assigns tasks straight away.
 - **Sandbox** (**Settings**): on by default. See [The sandbox](#the-sandbox) below.
+- **Ports on this computer agents may reach** (**Settings**): empty by default. See [The sandbox](#the-sandbox) below.
 - **project.md updates** happen once the whole team has been idle for 30 seconds, not after every reply.
 - **Edit** an agent from its card to change its model, role, effort, file access or terminal without firing it. The change applies from its next turn. Giving a lead or reviewer **Edit** file access gives it its own branch and worktree, like a worker.
 - **Roles** (Team panel): read and rewrite the job description of any role, including the built-in lead, worker, reviewer and scribe, or add your own. A new role "works like" one of those four, which sets what Symposium lets its agents do. An edit applies from each agent's next turn, in every group. **Reset to built-in** undoes your changes to a built-in role.
@@ -178,15 +179,19 @@ Inside it, an agent's program:
 - **can change** its own folder (a worker's worktree; nothing for a lead or reviewer), the download caches of npm, pnpm, yarn, bun, pip, uv, cargo, go, Maven and Gradle, the folders you add under **More folders agents may write to**, and its own provider's login files;
 - **can read** the project and the rest of your disk;
 - **sees empty**: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker`, the GitHub and Google Cloud logins, `~/.netrc`, `~/.git-credentials`, password stores, browser and mail profiles, the other provider's login, Symposium's own data (other agents' folders and memory, the chat), your session's sockets (the keyring, the ssh agent) and `/tmp`. Its `/tmp` is its own and is emptied after every turn;
-- **cannot see or stop** other programs on your computer, and it ends with everything it started when the turn ends.
+- **cannot see or stop** other programs on your computer, and it ends with everything it started when the turn ends;
+- **reaches the internet but no program on your computer**: not Symposium, not a database or dev server you run, not other computers on your network through your computer's own address. Its own `localhost` works, so a project's tests can start a server and call it. This needs `pasta` (see below).
 
 A write anywhere else fails with "Read-only file system". Agents are told so and asked not to look for a way around it. If a tool your project needs fails that way, add the folder it writes to under **More folders agents may write to**.
 
-**What you need.** `bwrap`, which the packages ask for and most Linux systems already have (`sudo dnf install bubblewrap` or `sudo apt install bubblewrap`). Antigravity keeps its login in your keyring, so its agents also need `xdg-dbus-proxy`: Symposium uses it to let them reach the keyring and nothing else of your session. **Settings** says so when something is missing. Then agents run without the sandbox, as they do on macOS, and Symposium tells you.
+If the project's tests need a program that runs on your computer, such as a database on port 5432, name its port under **Ports on this computer agents may reach**. Agents and the check command then reach that port on `localhost`, and no other. Symposium's own port is never let through.
+
+**What you need.** `bwrap`, which the packages ask for and most Linux systems already have (`sudo dnf install bubblewrap` or `sudo apt install bubblewrap`). Antigravity keeps its login in your keyring, so its agents also need `xdg-dbus-proxy`: Symposium uses it to let them reach the keyring and nothing else of your session. The network of its own needs `pasta`, from the `passt` package (`sudo dnf install passt` or `sudo apt install passt`), and `bash`. **Settings** says so when something is missing. Without `bwrap`, agents run without the sandbox, as they do on macOS, and Symposium tells you. Without `pasta`, they run in the sandbox on your computer's own network.
 
 **What it does not stop.** Know these before you rely on it:
 
-- **The network is open**, because the agent's program needs it. A command can send out what it can read: your project, the rest of your disk outside the hidden places, and its own provider's login. It can also reach programs that listen on your computer, Symposium itself included.
+- **The internet is open**, because the agent's program needs it. A command can send out what it can read: your project, the rest of your disk outside the hidden places, and its own provider's login.
+- **Without `pasta`** a command can also reach programs that listen on your computer, Symposium itself included. With it, the ports you name are open to agents: name only what the project needs.
 - Files with secrets in places Symposium does not know stay readable, for example an `.env` in another project or tokens in `~/.npmrc`.
 - An Antigravity agent can ask your keyring for any secret in it, not only its own.
 - The download caches are writable, so an agent could put a bad package there for a later install to find.
@@ -207,18 +212,19 @@ Set `SYMPOSIUM_HOME` to keep this data somewhere else.
 
 ## Troubleshooting
 
-| Problem                                                | What to do                                                                                             |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| "Command not found: claude" or "agy"                   | Install the CLI, or give its full path in **CLI path** when hiring.                                    |
-| An agent "could not finish"                            | The message includes the provider's error. Often the CLI is logged out: run it once in a terminal.     |
-| "Your project folder has X checked out"                | Check out the base branch in the project folder, then merge again.                                     |
-| "Merging … conflicts"                                  | Nothing was changed. Ask the worker to rework the change, or discard it.                               |
-| "… is inside the git repo at …"                        | Use the repo's top folder as the project folder.                                                       |
-| The UI says "Reconnecting…"                            | The engine stopped. Run `symposium` again.                                                             |
-| `symposium: command not found`                         | Add `~/.local/bin` to your PATH, or start it with its full path, which the install script prints.      |
-| "The chat page has not been built yet"                 | Run `scripts/install.sh`, or `pnpm install && pnpm build`.                                             |
-| "Port 4400 is used by another program"                 | Start with `symposium --port 4401`.                                                                    |
-| An agent waits and nothing happens                     | Look for a command card waiting for your answer. After 10 minutes without one the command is refused.  |
-| A command or the check fails: "Read-only file system"  | The sandbox refused a write outside the agent's folder. Add the folder under **Settings** if needed.   |
-| An Antigravity agent says it "stopped without a reply" | You denied its command, and Antigravity ends its turn when that happens. Message it again to carry on. |
-| "The `code` command was not found"                     | In VS Code, open the Command Palette and run "Shell Command: Install 'code' command in PATH".          |
+| Problem                                                      | What to do                                                                                             |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| "Command not found: claude" or "agy"                         | Install the CLI, or give its full path in **CLI path** when hiring.                                    |
+| An agent "could not finish"                                  | The message includes the provider's error. Often the CLI is logged out: run it once in a terminal.     |
+| "Your project folder has X checked out"                      | Check out the base branch in the project folder, then merge again.                                     |
+| "Merging … conflicts"                                        | Nothing was changed. Ask the worker to rework the change, or discard it.                               |
+| "… is inside the git repo at …"                              | Use the repo's top folder as the project folder.                                                       |
+| The UI says "Reconnecting…"                                  | The engine stopped. Run `symposium` again.                                                             |
+| `symposium: command not found`                               | Add `~/.local/bin` to your PATH, or start it with its full path, which the install script prints.      |
+| "The chat page has not been built yet"                       | Run `scripts/install.sh`, or `pnpm install && pnpm build`.                                             |
+| "Port 4400 is used by another program"                       | Start with `symposium --port 4401`.                                                                    |
+| An agent waits and nothing happens                           | Look for a command card waiting for your answer. After 10 minutes without one the command is refused.  |
+| A command or the check fails: "Read-only file system"        | The sandbox refused a write outside the agent's folder. Add the folder under **Settings** if needed.   |
+| A test cannot connect to a database or server on `localhost` | The sandbox keeps agents from programs on your computer. Name its port under **Settings**.             |
+| An Antigravity agent says it "stopped without a reply"       | You denied its command, and Antigravity ends its turn when that happens. Message it again to carry on. |
+| "The `code` command was not found"                           | In VS Code, open the Command Palette and run "Shell Command: Install 'code' command in PATH".          |

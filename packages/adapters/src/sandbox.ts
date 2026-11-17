@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { commandExists } from './process.js';
@@ -20,13 +20,26 @@ import { AdapterError, type ProviderId } from './types.js';
  *
  * `sessionBus` names the services of the user's desktop session (D-Bus) it may talk to, such
  * as the keyring a CLI keeps its login in. It reaches those and no others, through a filter.
+ *
+ * `network` says what it may reach over the network. See `SandboxNetwork`. Without it, the
+ * computer's own network.
  */
 export interface Sandbox {
   writable: string[];
   readOnly: string[];
   hidden: string[];
   sessionBus?: string[];
+  network?: SandboxNetwork;
 }
+
+/**
+ * - `'host'`: the computer's own network. The process reaches the internet and every program
+ *   that listens on this computer, Symposium's own API included.
+ * - `{ hostPorts }`: a network of its own (made with `pasta`) that reaches the internet and,
+ *   of this computer, only these TCP ports on localhost. Its own localhost works as usual, so
+ *   a project's tests can start a server and call it.
+ */
+export type SandboxNetwork = 'host' | { hostPorts: number[] };
 
 /**
  * The files a provider's CLI keeps under the user's home, as paths relative to it. The CLI
@@ -132,19 +145,121 @@ const BASE_ARGS = [
 
 /** A sandbox made ready for one process. `close` when the process has ended. */
 export interface OpenSandbox {
-  /** The `bwrap` arguments. The command and its own arguments follow them. */
-  args: string[];
+  /**
+   * What runs in place of the command: `bwrap …`, or `pasta … -- bwrap …` with a network of
+   * its own. The command and its own arguments follow.
+   */
+  prefix: string[];
   close(): void;
 }
 
-/** Gets `sandbox` ready for one process: its mounts and, if it needs one, its session bus filter. */
+/**
+ * Gets `sandbox` ready for one process: its mounts and, if it needs them, its session bus
+ * filter and its own network.
+ */
 export async function openSandbox(sandbox: Sandbox, cwd: string): Promise<OpenSandbox> {
-  if (!sandbox.sessionBus?.length) return { args: await bwrapArgs(sandbox, cwd), close: () => {} };
-  const bus = await openSessionBus(sandbox.sessionBus);
+  const closers: (() => void)[] = [];
+  const close = (): void => closers.forEach((closeOne) => closeOne());
   try {
-    return { args: await bwrapArgs(sandbox, cwd, [bus.mount]), close: bus.close };
+    const extra: Mount[] = [];
+    if (sandbox.sessionBus?.length) {
+      const bus = await openSessionBus(sandbox.sessionBus);
+      closers.push(bus.close);
+      extra.push(bus.mount);
+    }
+    const network = sandbox.network ?? 'host';
+    if (network !== 'host') {
+      const resolver = await privateResolver();
+      closers.push(resolver.close);
+      if (resolver.mount) extra.push(resolver.mount);
+    }
+    const bwrap = ['bwrap', ...(await bwrapArgs(sandbox, cwd, extra))];
+    const prefix =
+      network === 'host' ? bwrap : [...pastaPrefix(network.hostPorts), ...bwrap, ...UNDO_PASTA];
+    return { prefix, close };
   } catch (error) {
-    bus.close();
+    close();
+    throw error;
+  }
+}
+
+/**
+ * The address the private network asks for names. `pasta` passes those questions on to the
+ * computer's own resolver, which may listen on its localhost (systemd-resolved does).
+ */
+const PRIVATE_DNS = '169.254.1.53';
+
+/**
+ * pasta turns a standard input or output that is a socket into `/dev/null`, and Node gives a
+ * child sockets. So a small bash script runs first: it puts pipes in their place, with a `cat`
+ * on the other end of each, and then becomes pasta. The process keeps its id, its exit code and
+ * its process group, and each `cat` ends when its pipe does.
+ */
+const PIPES_FOR_PASTA =
+  'exec 3>&1 4>&2; exec "$@" < <(exec cat 2>/dev/null 3>&- 4>&-) > >(exec cat 4>&-) 2> >(exec cat >&4 3>&-)';
+
+/**
+ * pasta leaves its child with SIGPIPE ignored, which makes `yes | head` and its like complain
+ * of a broken pipe. This puts it back for the command, after `bwrap`.
+ */
+const UNDO_PASTA = ['env', '--default-signal=PIPE'];
+
+/**
+ * What goes in front of `bwrap` to give a process a network of its own: the pipes, then
+ * `pasta`. `bwrap` and the command follow.
+ */
+export function pastaPrefix(hostPorts: number[]): string[] {
+  return ['bash', '-c', PIPES_FOR_PASTA, 'symposium-sandbox', 'pasta', ...pastaArgs(hostPorts)];
+}
+
+/**
+ * The `pasta` arguments.
+ *
+ * - `-T` names the localhost ports of this computer the process may reach; `none` for none.
+ *   Without it, pasta lets the process reach every one.
+ * - `-U none`: no UDP ports of this computer either.
+ * - `-t none -u none`: nothing the process listens on shows up on this computer.
+ * - `--no-map-gw`: the gateway address does not lead to this computer.
+ */
+export function pastaArgs(hostPorts: number[]): string[] {
+  const ports = hostPorts.length ? hostPorts.join(',') : 'none';
+  return [
+    '--config-net',
+    '--no-map-gw',
+    '--quiet',
+    '-T',
+    ports,
+    '-U',
+    'none',
+    '-t',
+    'none',
+    '-u',
+    'none',
+    '--dns-forward',
+    PRIVATE_DNS,
+    '--',
+  ];
+}
+
+/**
+ * A `resolv.conf` for the private network, mounted over the computer's own, which may name a
+ * resolver on localhost that the private network cannot reach.
+ */
+async function privateResolver(): Promise<{ mount?: Mount; close: () => void }> {
+  let target: string;
+  try {
+    target = await realpath('/etc/resolv.conf');
+  } catch {
+    return { close: () => {} };
+  }
+  const folder = await mkdtemp(join(tmpdir(), 'symposium-net-'));
+  const close = (): void => void rm(folder, { recursive: true, force: true });
+  try {
+    const file = join(folder, 'resolv.conf');
+    await writeFile(file, `nameserver ${PRIVATE_DNS}\n`);
+    return { mount: { path: target, args: ['--ro-bind', file, target] }, close };
+  } catch (error) {
+    close();
     throw error;
   }
 }
@@ -213,6 +328,28 @@ function bwrapWorks(): Promise<boolean> {
     );
   });
   return probe;
+}
+
+let networkProbe: Promise<boolean> | undefined;
+
+/**
+ * Whether this computer can give a sandboxed process a network of its own: `pasta` (package
+ * `passt`) is here and works. Where it is not, sandboxed processes use the computer's own.
+ */
+export async function privateNetworkAvailable(): Promise<boolean> {
+  if (!(await bwrapWorks())) return false;
+  networkProbe ??= new Promise((resolve) => {
+    const [program, ...args] = [
+      ...pastaPrefix([]),
+      'bwrap',
+      ...BASE_ARGS,
+      '--',
+      ...UNDO_PASTA,
+      'true',
+    ];
+    execFile(program!, args, { timeout: 10_000 }, (error) => resolve(error === null));
+  });
+  return networkProbe;
 }
 
 /**

@@ -70,6 +70,21 @@ function GroupSettings({
     }
   }
 
+  const [ports, setPorts] = useState(group.sandboxPorts.join(', '));
+
+  function savePorts(): void {
+    const wanted = [
+      ...new Set(
+        ports
+          .split(/[\s,]+/)
+          .map(Number)
+          .filter((port) => Number.isInteger(port) && port >= 1 && port <= 65535),
+      ),
+    ].sort((a, b) => a - b);
+    setPorts(wanted.join(', '));
+    if (wanted.join() !== group.sandboxPorts.join()) onChange({ sandboxPorts: wanted });
+  }
+
   function rename(): void {
     const wanted = name.trim();
     if (wanted && wanted !== group.name) onChange({ name: wanted });
@@ -227,6 +242,13 @@ function GroupSettings({
                     Antigravity agents run without it here: install <code>xdg-dbus-proxy</code>.
                   </strong>
                 )}
+                {system && system.sandbox.works && !system.sandbox.network && (
+                  <strong className="setting-warning">
+                    {' '}
+                    Agents can still reach programs on this computer, Symposium included: install{' '}
+                    <code>passt</code> to keep them out.
+                  </strong>
+                )}
               </small>
             </span>
             <input
@@ -254,6 +276,26 @@ function GroupSettings({
                 spellCheck={false}
                 onChange={(event) => setFolders(event.target.value)}
                 onBlur={saveFolders}
+              />
+            </label>
+          )}
+          {group.sandbox && system?.sandbox.network && (
+            <label className="setting-row setting-row-stacked">
+              <span>
+                Ports on this computer agents may reach
+                <small>
+                  Agents reach the internet but no program on this computer, unless you name its
+                  port here: a database or a dev server their tests need. Symposium's own port is
+                  never open to them.
+                </small>
+              </span>
+              <input
+                type="text"
+                value={ports}
+                placeholder="5432, 6379"
+                spellCheck={false}
+                onChange={(event) => setPorts(event.target.value)}
+                onBlur={savePorts}
               />
             </label>
           )}

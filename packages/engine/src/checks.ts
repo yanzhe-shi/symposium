@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { bwrapArgs, type Sandbox } from '@symposium/adapters';
+import { openSandbox, type OpenSandbox, type Sandbox } from '@symposium/adapters';
 import type { CheckResult, CheckStatus } from './protocol.js';
 
 export const DEFAULT_CHECK_TIMEOUT_MS = 10 * 60 * 1000;
@@ -24,15 +24,27 @@ export async function runCheck(
 ): Promise<CheckResult> {
   const started = Date.now();
   const { timeoutMs = DEFAULT_CHECK_TIMEOUT_MS, signal } = options;
-  const [program, args] = options.sandbox
-    ? ['bwrap', [...(await bwrapArgs(options.sandbox, cwd)), 'sh', '-c', command]]
-    : ['sh', ['-c', command]];
+  const early = (status: CheckStatus, output = ''): CheckResult => ({
+    command,
+    status,
+    exitCode: null,
+    output,
+    durationMs: Date.now() - started,
+  });
+  if (signal?.aborted) return early('stopped');
+  let sandbox: OpenSandbox | undefined;
+  try {
+    sandbox = options.sandbox && (await openSandbox(options.sandbox, cwd));
+  } catch (error) {
+    return early('error', `Could not start: ${error instanceof Error ? error.message : error}\n`);
+  }
+  if (signal?.aborted) {
+    sandbox?.close();
+    return early('stopped');
+  }
+  const [program, ...args] = [...(sandbox?.prefix ?? []), 'sh', '-c', command];
 
   return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve({ command, status: 'stopped', exitCode: null, output: '', durationMs: 0 });
-      return;
-    }
     let output = '';
     let cut = false;
     let ending: CheckStatus | undefined;
@@ -41,13 +53,14 @@ export async function runCheck(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      sandbox?.close();
       signal?.removeEventListener('abort', onStop);
       const text = `${cut ? '… earlier output left out\n' : ''}${output}${note}`;
       resolve({ command, status, exitCode, output: text, durationMs: Date.now() - started });
     };
 
     // Its own process group, so stopping it also reaches whatever the command started.
-    const child = spawn(program, args, {
+    const child = spawn(program!, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
@@ -62,7 +75,8 @@ export async function runCheck(
     const end = (status: CheckStatus): void => {
       if (ending) return;
       ending = status;
-      kill('SIGTERM');
+      // A sandbox's first process may be a namespace's init, which ignores SIGTERM.
+      kill(sandbox ? 'SIGKILL' : 'SIGTERM');
       setTimeout(() => kill('SIGKILL'), KILL_GRACE_MS).unref();
     };
     const onStop = (): void => end('stopped');

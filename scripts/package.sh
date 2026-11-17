@@ -126,6 +126,7 @@ Requires:       libstdc++
 # For the sandbox agents run in. Symposium works without them, unsandboxed.
 Recommends:     bubblewrap
 Recommends:     xdg-dbus-proxy
+Recommends:     passt
 %global debug_package %{nil}
 %global __os_install_post %{nil}
 %global _build_id_links none
@@ -168,7 +169,7 @@ Section: devel
 Priority: optional
 Architecture: amd64
 Depends: git, libc6 (>= $MIN_GLIBC), libstdc++6 (>= 11)
-Recommends: bubblewrap, xdg-dbus-proxy
+Recommends: bubblewrap, xdg-dbus-proxy, passt
 Installed-Size: $(du -sk "$STAGE" | cut -f1)
 Maintainer: Symposium project <noreply@symposium.invalid>
 Description: $SUMMARY

@@ -23,6 +23,7 @@ export async function startEngine(
     rolesDir: config.rolesDir,
     projectsDir: config.projectsDir,
     uiDir: config.uiDir,
+    port: config.port,
     logger,
   });
   await app.listen({ host: config.host, port: config.port });

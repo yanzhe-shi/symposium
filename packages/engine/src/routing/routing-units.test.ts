@@ -101,6 +101,7 @@ describe('prompt context', () => {
     autoReview: true,
     sandbox: true,
     sandboxFolders: [],
+    sandboxPorts: [],
     createdAt: 0,
   };
   let nextId = 1;

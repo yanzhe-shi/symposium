@@ -24,4 +24,8 @@ export interface AppContext {
    * that provider's CLI.
    */
   canSandbox: (provider?: ProviderId) => Promise<boolean>;
+  /** Whether this computer can give a sandbox a network of its own (`pasta`). */
+  canIsolateNetwork: () => Promise<boolean>;
+  /** The port the engine answers on. Sandboxed processes never reach it. */
+  enginePort: number;
 }

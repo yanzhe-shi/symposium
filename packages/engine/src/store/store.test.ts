@@ -23,6 +23,7 @@ describe('groups store', () => {
       autoReview: true,
       sandbox: true,
       sandboxFolders: [],
+      sandboxPorts: [],
       createdAt: 1000,
     });
     expect(getGroup(db, 'missing')).toBeUndefined();

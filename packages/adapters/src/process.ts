@@ -105,21 +105,25 @@ export async function runProcess(options: ProcessOptions): Promise<ProcessResult
   const { command, args, cwd, input, env, signal, timeoutMs, onStdoutLine, onStart } = options;
   const clock = options.clock ?? (timeoutMs === undefined ? undefined : new TurnClock(timeoutMs));
   if (signal?.aborted) throw new CancelledError();
-  // In a sandbox, bubblewrap is what starts: it sets the sandbox up and then runs the command.
+  // In a sandbox, bubblewrap is what starts (behind pasta, with a network of its own): it sets
+  // the sandbox up and then runs the command.
   const sandbox = options.sandbox && (await openSandbox(options.sandbox, cwd));
-  const [program, programArgs] = sandbox
-    ? ['bwrap', [...sandbox.args, command, ...args]]
-    : [command, args];
+  const [program, ...programArgs] = sandbox
+    ? [...sandbox.prefix, command, ...args]
+    : [command, ...args];
   if (signal?.aborted) {
     sandbox?.close();
     throw new CancelledError();
   }
 
   return new Promise((resolve, reject) => {
-    const child = spawn(program, programArgs, {
+    // A sandbox runs in its own process group, so that stopping it reaches everything in it:
+    // pasta leaves its child running when it is told to end.
+    const child = spawn(program!, programArgs, {
       cwd,
       env: env ?? process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      detached: sandbox !== undefined,
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -131,12 +135,24 @@ export async function runProcess(options: ProcessOptions): Promise<ProcessResult
       settled = true;
       clock?.stop();
       sandbox?.close();
+      // A sandbox with its own network reads stdin through a relay, which ends with stdin.
+      child.stdin.destroy();
       signal?.removeEventListener('abort', onAbort);
       if (error) reject(error);
       else resolve(result!);
     }
 
     function stop(): void {
+      if (sandbox && child.pid !== undefined) {
+        // All at once: the sandbox's first process may be a namespace's init, which ignores
+        // SIGTERM. Without a network of its own, bubblewrap kills the command this way anyway.
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          // Already gone.
+        }
+        return;
+      }
       child.kill('SIGTERM');
       setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');

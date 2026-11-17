@@ -6,6 +6,7 @@ import type { Group } from '../protocol.js';
 
 export const MAX_SANDBOX_FOLDERS = 20;
 export const MAX_SANDBOX_FOLDER_LENGTH = 500;
+export const MAX_SANDBOX_PORTS = 20;
 
 /**
  * Places under the home folder that hold keys, logins and private data. An agent's process
@@ -72,6 +73,12 @@ export interface SandboxInput {
   provider?: ProviderId;
   /** Folders the human added in the group's settings. */
   extraFolders: string[];
+  /** Whether this computer can give the process a network of its own. */
+  privateNetwork: boolean;
+  /** Ports on this computer the human lets it reach, from the group's settings. */
+  hostPorts: number[];
+  /** The engine's own port, which it never reaches. */
+  enginePort: number;
 }
 
 /**
@@ -84,6 +91,8 @@ export interface SandboxInput {
  * - It sees empty: the places for secrets, the logins of other providers, Symposium's data
  *   (other agents' folders and memory, the chat), the temporary folders, and the user's
  *   session sockets (the keyring, the ssh agent).
+ * - Where the computer can, it gets a network of its own: the internet, and of this computer
+ *   only the ports the human named. Never Symposium's own, or it could approve its own work.
  */
 export function decideSandbox(input: SandboxInput): Sandbox {
   const { home, cwd, projectFolder } = input;
@@ -120,6 +129,9 @@ export function decideSandbox(input: SandboxInput): Sandbox {
       '/run/podman',
     ],
     sessionBus: state?.sessionBus,
+    network: input.privateNetwork
+      ? { hostPorts: input.hostPorts.filter((port) => port !== input.enginePort) }
+      : 'host',
   };
 }
 
@@ -135,6 +147,9 @@ export async function sandboxFor(
   if (!group.sandbox || !group.folderPath) return undefined;
   if (!(await ctx.canSandbox(work.provider))) return undefined;
   return decideSandbox({
+    privateNetwork: await ctx.canIsolateNetwork(),
+    hostPorts: group.sandboxPorts,
+    enginePort: ctx.enginePort,
     ...work,
     home: homedir(),
     dataDir: ctx.dataDir,
@@ -142,6 +157,22 @@ export async function sandboxFor(
     projectFolder: group.folderPath,
     extraFolders: group.sandboxFolders,
   });
+}
+
+/**
+ * Checks the ports the human wants agents to reach. Returns them sorted without repeats, or a
+ * message for the human.
+ */
+export function validateSandboxPorts(
+  ports: number[],
+  enginePort: number,
+): { ports: number[] } | { error: string } {
+  if (ports.includes(enginePort)) {
+    return {
+      error: `Port ${enginePort} is Symposium's own. An agent that reached it could approve its own work.`,
+    };
+  }
+  return { ports: [...new Set(ports)].sort((a, b) => a - b) };
 }
 
 /**

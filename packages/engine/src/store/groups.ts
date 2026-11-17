@@ -17,6 +17,7 @@ interface GroupRow {
   auto_review: number;
   sandbox: number;
   sandbox_folders: string;
+  sandbox_ports: string;
   created_at: number;
 }
 
@@ -33,6 +34,7 @@ function toGroup(row: GroupRow): Group {
     autoReview: row.auto_review === 1,
     sandbox: row.sandbox === 1,
     sandboxFolders: JSON.parse(row.sandbox_folders) as string[],
+    sandboxPorts: JSON.parse(row.sandbox_ports) as number[],
     createdAt: row.created_at,
   };
 }
@@ -79,6 +81,7 @@ export function updateGroup(
     autoReview?: boolean;
     sandbox?: boolean;
     sandboxFolders?: string[];
+    sandboxPorts?: number[];
     baseBranch?: string;
   },
 ): Group | undefined {
@@ -86,7 +89,8 @@ export function updateGroup(
   if (!group) return undefined;
   db.prepare(
     `UPDATE groups SET name = ?, max_rounds = ?, max_parallel = ?, lead_asks_first = ?,
-     check_command = ?, auto_review = ?, sandbox = ?, sandbox_folders = ?, base_branch = ?
+     check_command = ?, auto_review = ?, sandbox = ?, sandbox_folders = ?, sandbox_ports = ?,
+     base_branch = ?
      WHERE id = ?`,
   ).run(
     changes.name ?? group.name,
@@ -97,6 +101,7 @@ export function updateGroup(
     (changes.autoReview ?? group.autoReview) ? 1 : 0,
     (changes.sandbox ?? group.sandbox) ? 1 : 0,
     JSON.stringify(changes.sandboxFolders ?? group.sandboxFolders),
+    JSON.stringify(changes.sandboxPorts ?? group.sandboxPorts),
     changes.baseBranch ?? group.baseBranch,
     id,
   );

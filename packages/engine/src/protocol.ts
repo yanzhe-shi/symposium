@@ -36,6 +36,12 @@ export interface Group {
   sandbox: boolean;
   /** More folders a sandboxed agent may write to, such as a build cache. Full paths. */
   sandboxFolders: string[];
+  /**
+   * TCP ports on this computer that a sandboxed agent may reach, such as a database its tests
+   * need. Every other program on this computer is out of its reach, where the computer can
+   * give the sandbox a network of its own. Symposium's own port is never among them.
+   */
+  sandboxPorts: number[];
   createdAt: number;
 }
 
@@ -464,10 +470,11 @@ export interface SystemInfo {
   /** Per provider, whether its program was found. API and mock providers need none. */
   providers: Record<ProviderId, boolean>;
   /**
-   * Whether this computer can sandbox agents at all (Linux with bubblewrap), and the providers
-   * whose agents still run without one because something more is missing.
+   * Whether this computer can sandbox agents at all (Linux with bubblewrap), the providers
+   * whose agents still run without one because something more is missing, and whether the
+   * sandbox gets a network of its own (pasta), which keeps agents from programs on this computer.
    */
-  sandbox: { works: boolean; without: ProviderId[] };
+  sandbox: { works: boolean; without: ProviderId[]; network: boolean };
 }
 
 /** Body of `POST /api/groups/:id/terminal`: a command the human runs themselves. */
@@ -534,6 +541,7 @@ export interface UpdateGroupRequest {
   autoReview?: boolean;
   sandbox?: boolean;
   sandboxFolders?: string[];
+  sandboxPorts?: number[];
 }
 
 export interface ErrorResponse {

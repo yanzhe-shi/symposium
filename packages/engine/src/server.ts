@@ -1,5 +1,10 @@
 import { join } from 'node:path';
-import { createAdapter, sandboxAvailable, type ProviderId } from '@symposium/adapters';
+import {
+  createAdapter,
+  privateNetworkAvailable,
+  sandboxAvailable,
+  type ProviderId,
+} from '@symposium/adapters';
 import websocket from '@fastify/websocket';
 import Fastify, {
   type FastifyError,
@@ -8,7 +13,7 @@ import Fastify, {
 } from 'fastify';
 import { CommandApprovals } from './commands/approvals.js';
 import { HumanTerminal } from './commands/terminal.js';
-import { BUILT_IN_ROLES_DIR, DEFAULT_PROJECTS_DIR } from './config.js';
+import { BUILT_IN_ROLES_DIR, DEFAULT_PORT, DEFAULT_PROJECTS_DIR } from './config.js';
 import type { AdapterFactory, AppContext } from './context.js';
 import type { Db } from './db/database.js';
 import { localhostGuard } from './localhost-guard.js';
@@ -43,6 +48,10 @@ export interface ServerDeps {
   createAdapter?: AdapterFactory;
   /** Whether agents' processes can be sandboxed here. Tests answer for themselves. */
   canSandbox?: (provider?: ProviderId) => Promise<boolean>;
+  /** Whether a sandbox can have a network of its own here. Tests answer for themselves. */
+  canIsolateNetwork?: () => Promise<boolean>;
+  /** The port the engine listens on, which sandboxed processes must never reach. */
+  port?: number;
   /** How long a group must stay idle before the scribe updates project.md. */
   scribeDelayMs?: number;
   /** The shortest time between two pushes of one agent's live diff. */
@@ -76,6 +85,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     vscodeCommand: deps.vscodeCommand ?? 'code',
     createAdapter: deps.createAdapter ?? defaultAdapterFactory,
     canSandbox: deps.canSandbox ?? sandboxAvailable,
+    canIsolateNetwork: deps.canIsolateNetwork ?? privateNetworkAvailable,
+    enginePort: deps.port ?? DEFAULT_PORT,
   };
 
   const approvals = new CommandApprovals(ctx, deps.approvalTimeoutMs);

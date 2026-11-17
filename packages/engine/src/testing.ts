@@ -30,6 +30,8 @@ export async function createTestApp(
     approvalTimeoutMs?: number;
     /** Whether agents' processes can be sandboxed. Left out: no, on every computer. */
     canSandbox?: (provider?: ProviderId) => Promise<boolean>;
+    /** Whether a sandbox can have a network of its own. Left out: no. */
+    canIsolateNetwork?: () => Promise<boolean>;
     vscodeCommand?: string;
   } = {},
 ): Promise<TestApp> {
@@ -52,6 +54,7 @@ export async function createTestApp(
     createAdapter: options.createAdapter ?? mockFactory,
     // The same on every computer: no sandbox, unless a test is about it.
     canSandbox: options.canSandbox ?? (async () => false),
+    canIsolateNetwork: options.canIsolateNetwork ?? (async () => false),
     // Tests don't wait for the group to stay quiet before the scribe runs, unless they ask to.
     scribeDelayMs: options.scribeDelayMs ?? 0,
     liveChangesIntervalMs: options.liveChangesIntervalMs,
